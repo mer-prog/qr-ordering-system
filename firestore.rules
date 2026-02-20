@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 【メニュー】
+    // お客さんは「見るだけ」。管理画面から編集可能。
+    // ※認証未実装のため、write は一旦 true にする
+    match /menu/{item} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // 【注文】
+    // お客さんは「注文作成」ができる。
+    // 店員用アプリがまだ認証未実装のため、確認と更新は「誰でもOK」。
+    // ただし「削除」は禁止して履歴を守る。
+    match /orders/{order} {
+      allow create: if true;
+      allow read, update: if true;
+      allow delete: if false;
+    }
+
+  }
+}

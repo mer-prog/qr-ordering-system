@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>厨房・オーダー管理（黒板）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Kaisei+Decol:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Kaisei Decol', serif;
+            background-color: #2b2b2b; /* 黒板色 */
+            color: #f0f0f0;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(255, 255, 255, 0.05) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(255, 255, 255, 0.05) 0%, transparent 20%);
+        }
+        .paper-slip {
+            background-color: #fdf6e3; /* Light cream paper */
+            color: #2c3e50; /* Dark ink */
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+        }
+        .paper-slip-served {
+            background-color: #e0f2f1; /* Light cyan for served */
+            color: #004d40;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+            border: 1px solid #80cbc4;
+        }
+        .font-header {
+            font-family: 'Noto Serif JP', serif;
+        }
+
+        /* Tab styles */
+        .tab-btn {
+            padding: 0.5rem 1.5rem;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-bottom: none;
+            border-radius: 0.5rem 0.5rem 0 0;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        .tab-btn.active {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.3);
+            color: #fbbf24;
+        }
+        .tab-btn:not(.active) {
+            opacity: 0.6;
+        }
+        .tab-btn:hover:not(.active) {
+            opacity: 0.8;
+            background: rgba(255,255,255,0.05);
+        }
+
+        /* Menu management styles */
+        .menu-table { width: 100%; border-collapse: collapse; }
+        .menu-table th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid rgba(255,255,255,0.2); font-size: 0.8rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+        .menu-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: middle; }
+        .menu-table tr:hover td { background: rgba(255,255,255,0.03); }
+        .menu-table .drag-handle { cursor: grab; opacity: 0.4; user-select: none; }
+        .menu-table .drag-handle:hover { opacity: 1; }
+        .menu-table tr.dragging { opacity: 0.4; }
+        .menu-table tr.drag-over { border-top: 2px solid #fbbf24; }
+
+        .input-field {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #f0f0f0;
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.375rem;
+            font-family: inherit;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+        .input-field:focus { outline: none; border-color: #fbbf24; }
+        .input-field::placeholder { color: rgba(255,255,255,0.3); }
+
+        select.input-field { cursor: pointer; }
+        select.input-field option { background: #2b2b2b; color: #f0f0f0; }
+
+        .btn-action {
+            padding: 0.35rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.8rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+        }
+        .btn-action:active { transform: scale(0.95); }
+
+        .btn-save { background: #059669; color: white; }
+        .btn-save:hover { background: #047857; }
+        .btn-delete { background: transparent; color: #ef4444; border-color: #ef4444; }
+        .btn-delete:hover { background: #ef4444; color: white; }
+        .btn-add { background: #fbbf24; color: #1f2937; }
+        .btn-add:hover { background: #f59e0b; }
+        .btn-cancel { background: rgba(255,255,255,0.1); color: #9ca3af; }
+        .btn-cancel:hover { background: rgba(255,255,255,0.2); color: white; }
+
+        .category-header {
+            background: rgba(255,255,255,0.05);
+            padding: 0.5rem 0.75rem;
+            font-weight: bold;
+            font-size: 0.85rem;
+            color: #fbbf24;
+            letter-spacing: 0.05em;
+        }
+
+        /* Edit modal */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 50;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        .modal-overlay.show { opacity: 1; pointer-events: auto; }
+        .modal-content {
+            background: #333; border: 1px solid rgba(255,255,255,0.2); border-radius: 0.75rem;
+            padding: 1.5rem; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;
+            transform: scale(0.9); transition: transform 0.2s;
+        }
+        .modal-overlay.show .modal-content { transform: scale(1); }
+
+        /* Toast */
+        .toast {
+            position: fixed; bottom: 2rem; right: 2rem; z-index: 100;
+            padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+            font-weight: bold; font-size: 0.9rem;
+            transform: translateY(100px); opacity: 0; transition: all 0.3s;
+        }
+        .toast.show { transform: translateY(0); opacity: 1; }
+        .toast-success { background: #059669; color: white; }
+        .toast-error { background: #ef4444; color: white; }
+    </style>
+</head>
+<body class="min-h-screen p-4 flex flex-col h-screen overflow-hidden">
+
+    <header class="flex-none flex justify-between items-end mb-4 border-b border-gray-500 pb-2">
+        <div>
+            <h1 class="text-3xl font-bold text-white mb-1 tracking-widest pl-4 border-l-4 border-yellow-600">
+                厨房・オーダー管理
+            </h1>
+            <!-- Tab Navigation -->
+            <div class="flex gap-1 mt-2 pl-4">
+                <button class="tab-btn active" data-tab="orders" onclick="switchTab('orders')">📋 オーダー管理</button>
+                <button class="tab-btn" data-tab="menu" onclick="switchTab('menu')">🍽️ メニュー管理</button>
+            </div>
+        </div>
+        <div class="text-right">
+            <div class="text-3xl font-mono text-yellow-500 font-bold" id="clock">--:--</div>
+            <div class="text-gray-400 text-sm">本日の売上: <span id="daily-sales" class="text-white font-bold text-lg">¥0</span></div>
+        </div>
+    </header>
+
+    <!-- ========== TAB 1: Orders (既存) ========== -->
+    <main id="tab-orders" class="flex-grow flex gap-4 overflow-hidden">
+        
+        <!-- Column 1: Kitchen (Pending) -->
+        <section class="flex-1 flex flex-col min-w-0 bg-white/5 rounded-lg p-3 border border-white/10">
+            <h2 class="text-xl font-bold mb-3 flex items-center gap-2 text-yellow-100 flex-none">
+                <span class="w-2 h-6 bg-red-500 rounded-sm block"></span>
+                調理待ち (未提供)
+            </h2>
+            <div id="kitchen-list" class="flex-grow overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-gray-600">
+                <!-- Pending Orders (Individual) -->
+            </div>
+        </section>
+
+        <!-- Column 2: Served (Unpaid - Table Bill) -->
+        <section class="flex-1 flex flex-col min-w-0 bg-white/5 rounded-lg p-3 border border-white/10">
+            <h2 class="text-xl font-bold mb-3 flex items-center gap-2 text-cyan-100 flex-none">
+                <span class="w-2 h-6 bg-cyan-600 rounded-sm block"></span>
+                提供済み・未会計 (伝票)
+            </h2>
+            <div id="served-list" class="flex-grow overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-gray-600">
+                <!-- Served Orders (Grouped by Table) -->
+            </div>
+        </section>
+
+        <!-- Column 3: History (Paid) -->
+        <section class="flex-1 flex flex-col min-w-0 bg-white/5 rounded-lg p-3 border border-white/10">
+            <div class="flex-none">
+                <h2 class="text-xl font-bold mb-2 flex items-center gap-2 text-gray-400">
+                    <span class="w-2 h-6 bg-gray-600 rounded-sm block"></span>
+                    会計済み (履歴)
+                </h2>
+                <!-- Date filter -->
+                <div class="flex items-center gap-2 mb-3 bg-white/5 rounded px-2 py-1.5">
+                    <button class="text-gray-400 hover:text-white text-lg px-1 transition-colors" onclick="shiftHistoryDate(-1)" title="前日">◀</button>
+                    <input type="date" id="history-date" class="input-field text-center text-sm py-1 flex-grow" onchange="filterHistory()">
+                    <button class="text-gray-400 hover:text-white text-lg px-1 transition-colors" onclick="shiftHistoryDate(1)" title="翌日">▶</button>
+                    <button class="text-xs text-yellow-400 hover:text-yellow-300 whitespace-nowrap px-2 py-1 border border-yellow-400/30 rounded transition-colors" onclick="setHistoryDateToday()">今日</button>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500 mb-2">
+                    <span id="history-count">0件</span>
+                    <span id="history-total">合計: ¥0</span>
+                </div>
+            </div>
+            <div id="history-list" class="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-gray-600">
+                <!-- History Items -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ========== TAB 2: Menu Management (新規) ========== -->
+    <main id="tab-menu" class="flex-grow flex flex-col overflow-hidden" style="display: none;">
+        
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-xl font-bold text-yellow-100 flex items-center gap-2">
+                <span class="w-2 h-6 bg-yellow-500 rounded-sm block"></span>
+                メニュー管理
+                <span id="menu-count" class="text-sm font-normal text-gray-400 ml-2">(0品)</span>
+            </h2>
+            <button class="btn-action btn-add text-base px-6 py-2" onclick="openAddModal()">
+                ＋ 新しい商品を追加
+            </button>
+        </div>
+
+        <div class="flex-grow overflow-y-auto bg-white/5 rounded-lg border border-white/10">
+            <table class="menu-table">
+                <thead>
+                    <tr>
+                        <th style="width:40px;">順</th>
+                        <th>商品名</th>
+                        <th style="width:100px;">カテゴリ</th>
+                        <th style="width:90px;">価格</th>
+                        <th style="width:90px;">朝価格</th>
+                        <th style="width:200px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="menu-table-body">
+                    <!-- Menu items rendered here -->
+                </tbody>
+            </table>
+        </div>
+
+    </main>
+
+    <!-- ========== Edit/Add Modal ========== -->
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 id="modal-title" class="text-xl font-bold text-yellow-400 mb-4">商品を編集</h3>
+            <form id="edit-form" class="space-y-3">
+                <input type="hidden" id="edit-id">
+                
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">商品名 *</label>
+                    <input type="text" id="edit-name" class="input-field" required placeholder="ブレンド珈琲">
+                    <input type="hidden" id="edit-nameEn" value="">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">カテゴリ *</label>
+                        <select id="edit-type" class="input-field" required onchange="onCategoryChange()">
+                            <!-- Dynamic options populated by JS -->
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">価格 (¥) *</label>
+                        <input type="number" id="edit-price" class="input-field" required min="0" step="10" placeholder="450">
+                    </div>
+                </div>
+
+                <!-- New category fields -->
+                <div id="new-category-fields" class="hidden bg-yellow-500/10 border border-yellow-500/30 rounded p-3 space-y-2">
+                    <label class="text-xs text-yellow-400 font-bold block">📂 新しいカテゴリを作成</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" id="new-type-name" class="input-field" placeholder="カテゴリ名 (例: デザート)">
+                        <input type="text" id="new-type-key" class="input-field" placeholder="キーワード (例: dessert)">
+                    </div>
+                    <input type="hidden" id="new-type-nameEn" value="">
+                    <input type="hidden" id="new-type-order" value="">
+                </div>
+
+                <!-- Morning price toggle -->
+                <div class="flex items-center gap-3">
+                    <label class="text-sm text-gray-300 flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="edit-hasMorningPrice" onchange="toggleMorningPrice()">
+                        🌅 朝価格を設定する
+                    </label>
+                    <div id="morning-price-field" class="hidden flex-grow">
+                        <input type="number" id="edit-priceMorning" class="input-field" min="0" step="10" placeholder="朝価格 (¥)">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">説明</label>
+                    <input type="text" id="edit-desc" class="input-field" placeholder="深煎りのコクと香り">
+                    <input type="hidden" id="edit-descEn" value="">
+                </div>
+
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">商品画像</label>
+                    <div class="flex items-start gap-3">
+                        <div id="image-preview" class="w-20 h-20 rounded border border-white/20 overflow-hidden bg-white/5 flex items-center justify-center flex-shrink-0">
+                            <span class="text-gray-500 text-xs">No Image</span>
+                        </div>
+                        <div class="flex-grow">
+                            <label class="block w-full cursor-pointer">
+                                <div class="btn-action btn-cancel text-xs text-center py-2">📷 画像を選択</div>
+                                <input type="file" id="edit-image-file" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                            </label>
+                            <button type="button" class="text-xs text-red-400 hover:text-red-300 mt-1" onclick="clearImage()">画像を削除</button>
+                            <input type="hidden" id="edit-image" value="">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- セットメニュー -->
+                <div id="options-section" class="hidden">
+                    <label class="text-xs text-gray-400 block mb-1">セット（サンドイッチの種類 等）</label>
+                    <div class="flex items-center gap-2 mb-2">
+                        <label class="text-sm text-gray-300 flex items-center gap-2">
+                            <input type="checkbox" id="edit-hasOptions"> セットあり
+                        </label>
+                    </div>
+                    <div id="options-list" class="space-y-2 hidden">
+                        <!-- Dynamic option rows -->
+                    </div>
+                    <button type="button" id="add-option-btn" class="btn-action btn-cancel text-xs mt-2 hidden" onclick="addOptionRow()">
+                        ＋ セット追加
+                    </button>
+                </div>
+
+                <div class="flex gap-3 pt-4 border-t border-white/10">
+                    <button type="submit" class="btn-action btn-save flex-1 py-2 text-base">保存</button>
+                    <button type="button" class="btn-action btn-cancel flex-1 py-2 text-base" onclick="closeEditModal()">キャンセル</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="toast"></div>
+
+    <script type="module">
+        import { 
+            subscribeToOrders, updateOrderStatus, deleteOrder,
+            subscribeToMenu, addMenuItem, updateMenuItem, deleteMenuItem, updateMenuOrder
+        } from './db-service.js';
+
+        // ============================================================
+        //  SHARED STATE
+        // ============================================================
+        let menuItems = []; // current menu from Firestore
+
+        // Dynamic category extraction from menu items
+        function getCategories() {
+            const catMap = {};
+            menuItems.forEach(item => {
+                if (!catMap[item.type]) {
+                    catMap[item.type] = {
+                        id: item.type,
+                        name: item.typeName || item.type,
+                        nameEn: item.typeNameEn || item.type,
+                        order: item.typeOrder ?? 999
+                    };
+                }
+            });
+            return Object.values(catMap).sort((a, b) => a.order - b.order);
+        }
+
+        function getCategoryDisplayName(type) {
+            const cats = getCategories();
+            const cat = cats.find(c => c.id === type);
+            return cat ? cat.name : type;
+        }
+
+        // ============================================================
+        //  DOM REFS
+        // ============================================================
+        const kitchenList = document.getElementById('kitchen-list');
+        const servedList = document.getElementById('served-list');
+        const historyList = document.getElementById('history-list');
+        const historyDateInput = document.getElementById('history-date');
+        const historyCountEl = document.getElementById('history-count');
+        const historyTotalEl = document.getElementById('history-total');
+        const dailySalesEl = document.getElementById('daily-sales');
+        const timeEl = document.getElementById('clock'); 
+        const menuTableBody = document.getElementById('menu-table-body');
+        const menuCountEl = document.getElementById('menu-count');
+
+        // Init history date to today
+        const todayStr = new Date().toISOString().split('T')[0];
+        historyDateInput.value = todayStr;
+
+        // Store all orders for filtering
+        let allOrders = [];
+
+        // ============================================================
+        //  CLOCK
+        // ============================================================
+        setInterval(() => {
+            const now = new Date();
+            timeEl.textContent = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        }, 1000);
+
+        // ============================================================
+        //  IMAGE UPLOAD HANDLERS
+        // ============================================================
+        window.handleImageUpload = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Limit file size to 500KB
+            if (file.size > 500 * 1024) {
+                showToast('画像サイズは500KB以下にしてください', 'error');
+                event.target.value = '';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                // Resize image to max 300px for Firestore storage
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const maxSize = 300;
+                    let w = img.width, h = img.height;
+                    if (w > h) { if (w > maxSize) { h = h * maxSize / w; w = maxSize; } }
+                    else { if (h > maxSize) { w = w * maxSize / h; h = maxSize; } }
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                    const base64 = canvas.toDataURL('image/jpeg', 0.7);
+                    document.getElementById('edit-image').value = base64;
+                    updateImagePreview(base64);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        window.clearImage = () => {
+            document.getElementById('edit-image').value = '';
+            document.getElementById('edit-image-file').value = '';
+            updateImagePreview('');
+        };
+
+        function updateImagePreview(src) {
+            const preview = document.getElementById('image-preview');
+            if (src && src.length > 10) {
+                preview.innerHTML = `<img src="${src}" class="w-full h-full object-cover">`;
+            } else {
+                preview.innerHTML = `<span class="text-gray-500 text-xs">No Image</span>`;
+            }
+        }
+
+        // ============================================================
+        //  MORNING PRICE TOGGLE
+        // ============================================================
+        window.toggleMorningPrice = () => {
+            const checked = document.getElementById('edit-hasMorningPrice').checked;
+            document.getElementById('morning-price-field').classList.toggle('hidden', !checked);
+            if (!checked) {
+                document.getElementById('edit-priceMorning').value = '';
+            }
+        };
+
+        // ============================================================
+        //  TAB SWITCHING
+        // ============================================================
+        window.switchTab = (tabId) => {
+            document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+            document.getElementById(`tab-${tabId}`).style.display = tabId === 'orders' ? 'flex' : 'flex';
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tabId);
+            });
+        };
+
+        // ============================================================
+        //  ORDER MANAGEMENT (既存ロジック)
+        // ============================================================
+
+        function renderPendingCard(order) {
+            const itemsHtml = order.items.map(item => `
+                <div class="flex justify-between items-baseline border-b border-gray-400 border-dotted pb-1 mb-1 last:border-0 text-gray-800">
+                    <span class="text-md font-serif">${item.name}</span>
+                    <span class="font-mono text-red-600 font-bold">x${item.quantity}</span>
+                </div>
+            `).join('');
+
+            const timeStr = order.timestamp ? order.timestamp.toDate().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+            const orderIdShort = order.id.slice(-4).toUpperCase();
+
+            const el = document.createElement('div');
+            el.className = 'paper-slip p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
+            el.innerHTML = `
+                <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-gray-400 pb-1">
+                    <span class="font-bold text-gray-900 text-lg">卓番: <span class="font-mono text-2xl">${order.tableId}</span></span>
+                    <span class="text-xs text-gray-500 font-mono">#${orderIdShort}</span>
+                </div>
+                <div class="text-xs text-right text-gray-500 mb-2">${timeStr}</div>
+                <div class="space-y-1 mb-3 text-sm">
+                    ${itemsHtml}
+                </div>
+                <button class="w-full bg-red-800 text-white border-b-4 border-red-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="updateOrderStatus('${order.id}', 'served')">
+                    提供完了
+                </button>
+                 <div class="text-right mt-1">
+                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-red-700 hover:underline" onclick="deleteOrderPermanently('${order.id}')">削除</span>
+                </div>
+            `;
+            return el;
+        }
+
+        function renderServedTableCard(tableId, orders) {
+            const allItems = [];
+            let total = 0;
+            let earliestTime = null;
+
+            orders.sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+
+            orders.forEach(order => {
+                total += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                if (!earliestTime && order.timestamp) earliestTime = order.timestamp.toDate();
+                order.items.forEach(item => allItems.push(item));
+            });
+
+            const mergedItems = {};
+            allItems.forEach(item => {
+                const key = item.name;
+                if (!mergedItems[key]) mergedItems[key] = { ...item, quantity: 0 };
+                mergedItems[key].quantity += item.quantity;
+            });
+
+            const itemsHtml = Object.values(mergedItems).map(item => `
+                <div class="flex justify-between items-baseline border-b border-cyan-700/20 border-dotted pb-1 mb-1 last:border-0 text-cyan-900">
+                    <span class="text-md font-serif">${item.name}</span>
+                    <span class="font-mono font-bold">x${item.quantity}</span>
+                </div>
+            `).join('');
+
+            const timeStr = earliestTime ? earliestTime.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+
+            const el = document.createElement('div');
+            el.className = 'paper-slip-served p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
+            el.innerHTML = `
+                <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-cyan-700/30 pb-1">
+                    <span class="font-bold text-cyan-900 text-lg">卓番: <span class="font-mono text-2xl">${tableId}</span></span>
+                    <span class="text-xs bg-cyan-100 text-cyan-800 px-1 rounded border border-cyan-300">伝票</span>
+                </div>
+                <div class="text-xs text-right text-cyan-700 mb-2">First: ${timeStr}</div>
+                <div class="space-y-1 mb-3 text-sm">
+                    ${itemsHtml}
+                </div>
+                <div class="flex justify-between items-end border-t border-cyan-700/30 pt-2 mb-3">
+                    <span class="text-xs text-cyan-700">合計</span>
+                    <span class="text-xl font-mono font-bold text-cyan-900">¥${total.toLocaleString()}</span>
+                </div>
+                <button class="w-full bg-cyan-700 text-white border-b-4 border-cyan-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="completeTableOrders([${orders.map(o => `'${o.id}'`).join(',')}])">
+                    会計完了
+                </button>
+            `;
+            return el;
+        }
+
+        function renderHistoryItem(order) {
+            const total = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const timeStr = order.paidAt ? order.paidAt.toDate().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+            
+            const el = document.createElement('div');
+            el.className = 'bg-white/5 p-2 rounded border border-white/10 flex justify-between items-center text-sm hover:bg-white/10 transition-colors';
+            el.innerHTML = `
+                <div class="flex items-center gap-3 text-gray-300 min-w-0">
+                    <span class="font-mono text-xs opacity-50">${timeStr}</span>
+                    <span class="font-bold shrink-0">卓番:${order.tableId}</span>
+                    <span class="truncate opacity-70 text-xs">${order.items.map(i => i.name).join(', ')}</span>
+                </div>
+                <span class="font-mono text-gray-400 ml-2">¥${total.toLocaleString()}</span>
+            `;
+            return el;
+        }
+
+        // Global Actions (Orders)
+        window.updateOrderStatus = updateOrderStatus;
+        window.deleteOrderPermanently = async (id) => {
+            if(confirm('本当に削除しますか？')) await deleteOrder(id);
+        };
+        window.completeTableOrders = async (ids) => {
+            if(confirm('会計を完了しますか？')) {
+                for(const id of ids) await updateOrderStatus(id, 'paid');
+            }
+        };
+
+        // Real-time Order Logic
+        subscribeToOrders((orders) => {
+            updateSales(orders);
+
+            kitchenList.innerHTML = '';
+            servedList.innerHTML = '';
+            historyList.innerHTML = '';
+
+            const pending = orders.filter(o => o.status === 'pending').sort((a,b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+            const served = orders.filter(o => o.status === 'served');
+            const paid = orders.filter(o => o.status === 'paid');
+
+            pending.forEach(o => kitchenList.appendChild(renderPendingCard(o)));
+
+            const servedTables = {};
+            served.forEach(o => {
+                if(!servedTables[o.tableId]) servedTables[o.tableId] = [];
+                servedTables[o.tableId].push(o);
+            });
+            Object.keys(servedTables).sort((a,b) => a - b).forEach(tId => {
+                servedList.appendChild(renderServedTableCard(tId, servedTables[tId]));
+            });
+
+            // Store paid orders globally for date filtering
+            allOrders = orders;
+
+            // History: filter by selected date
+            filterHistory();
+        });
+
+        // ============================================================
+        //  HISTORY DATE FILTER
+        // ============================================================
+        window.filterHistory = () => {
+            historyList.innerHTML = '';
+            const selectedDate = historyDateInput.value;
+            if (!selectedDate) return;
+
+            const dateStart = new Date(selectedDate + 'T00:00:00');
+            const dateEnd = new Date(selectedDate + 'T23:59:59');
+
+            const paid = allOrders.filter(o => {
+                if (o.status !== 'paid') return false;
+                const dateObj = o.paidAt || o.timestamp;
+                if (!dateObj) return false;
+                try {
+                    const d = typeof dateObj.toDate === 'function' ? dateObj.toDate() : new Date(dateObj);
+                    return d >= dateStart && d <= dateEnd;
+                } catch(e) { return false; }
+            });
+
+            paid.sort((a, b) => {
+                const aTime = (a.paidAt || a.timestamp)?.seconds || 0;
+                const bTime = (b.paidAt || b.timestamp)?.seconds || 0;
+                return bTime - aTime;
+            });
+
+            let dayTotal = 0;
+            paid.forEach(o => {
+                historyList.appendChild(renderHistoryItem(o));
+                dayTotal += o.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            });
+
+            historyCountEl.textContent = `${paid.length}件`;
+            historyTotalEl.textContent = `合計: ¥${dayTotal.toLocaleString()}`;
+        };
+
+        window.shiftHistoryDate = (delta) => {
+            const current = new Date(historyDateInput.value);
+            current.setDate(current.getDate() + delta);
+            historyDateInput.value = current.toISOString().split('T')[0];
+            filterHistory();
+        };
+
+        window.setHistoryDateToday = () => {
+            historyDateInput.value = new Date().toISOString().split('T')[0];
+            filterHistory();
+        };
+
+        function updateSales(orders) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            let totalSales = 0;
+            orders.forEach(order => {
+                let dateObj = order.paidAt || order.timestamp;
+                if (order.status === 'paid' && dateObj) {
+                     try {
+                        const orderDate = typeof dateObj.toDate === 'function' ? dateObj.toDate() : new Date(dateObj);
+                        if (orderDate >= today) {
+                            totalSales += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+                        }
+                    } catch (e) { console.warn(e); }
+                }
+            });
+            dailySalesEl.textContent = `¥${totalSales.toLocaleString()}`;
+        }
+
+        // ============================================================
+        //  MENU MANAGEMENT (新規)
+        // ============================================================
+
+        // Subscribe to menu updates
+        subscribeToMenu((items) => {
+            menuItems = items;
+            renderMenuTable();
+        });
+
+        function renderMenuTable() {
+            menuTableBody.innerHTML = '';
+            menuCountEl.textContent = `(${menuItems.length}品)`;
+
+            // Dynamic categories from menu items
+            const categories = getCategories();
+
+            // Group by category
+            const grouped = {};
+            categories.forEach(cat => grouped[cat.id] = []);
+            
+            menuItems.forEach(item => {
+                if (!grouped[item.type]) grouped[item.type] = [];
+                grouped[item.type].push(item);
+            });
+
+            categories.forEach((cat, catIdx) => {
+                const items = grouped[cat.id];
+                if (!items || items.length === 0) return;
+
+                // Category header row with reorder buttons
+                const headerRow = document.createElement('tr');
+                const catUpDisabled = catIdx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-yellow-300 cursor-pointer';
+                const catDownDisabled = catIdx === categories.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-yellow-300 cursor-pointer';
+                headerRow.innerHTML = `
+                    <td colspan="6" class="category-header">
+                        <div class="flex items-center gap-2">
+                            <span>${cat.name} (${items.length}品)</span>
+                            <div class="flex gap-1 ml-auto">
+                                <button class="text-gray-400 ${catUpDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', -1)" title="カテゴリを上へ">▲</button>
+                                <button class="text-gray-400 ${catDownDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', 1)" title="カテゴリを下へ">▼</button>
+                            </div>
+                        </div>
+                    </td>
+                `;
+                menuTableBody.appendChild(headerRow);
+
+                // Item rows
+                items.forEach((item, idx) => {
+                    const tr = document.createElement('tr');
+                    tr.dataset.id = item.id;
+                    tr.draggable = true;
+
+                    const optionsBadge = item.hasOptions && item.options?.length > 0
+                        ? `<span class="text-xs bg-yellow-900/50 text-yellow-300 px-1.5 py-0.5 rounded ml-2">${item.options.length}種</span>`
+                        : '';
+
+                    const upDisabled = idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
+                    const downDisabled = idx === items.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
+
+                    tr.innerHTML = `
+                        <td>
+                            <div class="flex flex-col items-center gap-0.5">
+                                <button class="text-gray-500 ${upDisabled} text-xs leading-none" onclick="moveItem('${item.id}', -1)">▲</button>
+                                <button class="text-gray-500 ${downDisabled} text-xs leading-none" onclick="moveItem('${item.id}', 1)">▼</button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex items-center gap-2">
+                                <div class="font-bold text-sm">${item.name}</div>
+                                ${optionsBadge}
+                            </div>
+                        </td>
+                        <td><span class="text-xs px-2 py-0.5 rounded bg-white/10">${item.typeName || item.type}</span></td>
+                        <td class="font-mono font-bold">¥${item.price?.toLocaleString()}</td>
+                        <td class="font-mono text-sm ${item.priceMorning ? 'text-yellow-400' : 'text-gray-600'}">${item.priceMorning ? '¥' + item.priceMorning.toLocaleString() : '—'}</td>
+                        <td>
+                            <div class="flex gap-2">
+                                <button class="btn-action btn-save" onclick="openEditModal('${item.id}')">編集</button>
+                                <button class="btn-action btn-delete" onclick="confirmDeleteItem('${item.id}', '${item.name}')">削除</button>
+                            </div>
+                        </td>
+                    `;
+
+                    // Drag & Drop
+                    tr.addEventListener('dragstart', handleDragStart);
+                    tr.addEventListener('dragover', handleDragOver);
+                    tr.addEventListener('dragleave', handleDragLeave);
+                    tr.addEventListener('drop', handleDrop);
+                    tr.addEventListener('dragend', handleDragEnd);
+
+                    menuTableBody.appendChild(tr);
+                });
+            });
+        }
+
+        // ============================================================
+        //  DRAG & DROP REORDERING
+        // ============================================================
+        let dragSrcEl = null;
+
+        function handleDragStart(e) {
+            dragSrcEl = this;
+            this.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', this.dataset.id);
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            // Only show drag-over on item rows (not category headers)
+            if (this.dataset.id) {
+                this.classList.add('drag-over');
+            }
+        }
+
+        function handleDragLeave(e) {
+            this.classList.remove('drag-over');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+
+            if (!dragSrcEl || dragSrcEl === this || !this.dataset.id) return;
+
+            const srcId = dragSrcEl.dataset.id;
+            const destId = this.dataset.id;
+
+            const srcItem = menuItems.find(i => i.id === srcId);
+            const destItem = menuItems.find(i => i.id === destId);
+
+            // Only allow reorder within same category
+            if (srcItem.type !== destItem.type) {
+                showToast('同じカテゴリ内でのみ並び替えできます', 'error');
+                return;
+            }
+
+            // Swap order values
+            const sameCategory = menuItems.filter(i => i.type === srcItem.type);
+            const srcIdx = sameCategory.findIndex(i => i.id === srcId);
+            const destIdx = sameCategory.findIndex(i => i.id === destId);
+
+            // Reorder
+            const [moved] = sameCategory.splice(srcIdx, 1);
+            sameCategory.splice(destIdx, 0, moved);
+
+            // Reassign order values
+            const updates = sameCategory.map((item, idx) => ({
+                id: item.id,
+                order: item.type === 'drink' ? idx : item.type === 'food' ? 10 + idx : 20 + idx
+            }));
+
+            updateMenuOrder(updates).then(() => {
+                showToast('並び順を更新しました');
+            }).catch(err => {
+                showToast('並び替えに失敗しました', 'error');
+                console.error(err);
+            });
+        }
+
+        function handleDragEnd(e) {
+            this.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        }
+
+        // ============================================================
+        //  ▲▼ BUTTON REORDERING
+        // ============================================================
+        window.moveItem = async (itemId, direction) => {
+            const item = menuItems.find(i => i.id === itemId);
+            if (!item) return;
+
+            const sameCategory = menuItems
+                .filter(i => i.type === item.type)
+                .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const idx = sameCategory.findIndex(i => i.id === itemId);
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= sameCategory.length) return;
+
+            // Swap orders
+            const myOrder = sameCategory[idx].order || idx;
+            const theirOrder = sameCategory[targetIdx].order || targetIdx;
+
+            try {
+                await updateMenuItem(itemId, { order: theirOrder });
+                await updateMenuItem(sameCategory[targetIdx].id, { order: myOrder });
+                showToast('並び順を更新しました');
+            } catch (err) {
+                console.error(err);
+                showToast('並び替えに失敗しました', 'error');
+            }
+        };
+
+        window.moveCategory = async (categoryId, direction) => {
+            const categories = getCategories();
+            const idx = categories.findIndex(c => c.id === categoryId);
+            const targetIdx = idx + direction;
+            if (targetIdx < 0 || targetIdx >= categories.length) return;
+
+            const myOrder = categories[idx].order;
+            const theirOrder = categories[targetIdx].order;
+
+            // Update all items in both categories with swapped typeOrder
+            const myItems = menuItems.filter(i => i.type === categories[idx].id);
+            const theirItems = menuItems.filter(i => i.type === categories[targetIdx].id);
+
+            try {
+                for (const item of myItems) {
+                    await updateMenuItem(item.id, { typeOrder: theirOrder });
+                }
+                for (const item of theirItems) {
+                    await updateMenuItem(item.id, { typeOrder: myOrder });
+                }
+                showToast('カテゴリ順を更新しました');
+            } catch (err) {
+                console.error(err);
+                showToast('並び替えに失敗しました', 'error');
+            }
+        };
+
+        // ============================================================
+        //  ADD / EDIT MODAL
+        // ============================================================
+
+        // Populate the category dropdown dynamically
+        function populateCategoryDropdown(selectedType = '') {
+            const select = document.getElementById('edit-type');
+            select.innerHTML = '';
+            const categories = getCategories();
+
+            // Add placeholder if categories exist
+            if (categories.length > 0) {
+                categories.forEach(cat => {
+                    const opt = document.createElement('option');
+                    opt.value = cat.id;
+                    opt.textContent = cat.name;
+                    if (cat.id === selectedType) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            }
+
+            // Add "new category" option
+            const newOpt = document.createElement('option');
+            newOpt.value = '__new__';
+            newOpt.textContent = '＋ 新しいカテゴリを作成';
+            select.appendChild(newOpt);
+
+            // Sync visibility of new-category fields
+            onCategoryChange();
+        }
+
+        function onCategoryChange() {
+            const val = document.getElementById('edit-type').value;
+            const fields = document.getElementById('new-category-fields');
+            if (val === '__new__') {
+                fields.classList.remove('hidden');
+            } else {
+                fields.classList.add('hidden');
+            }
+        }
+        window.onCategoryChange = onCategoryChange;
+
+        window.openAddModal = () => {
+            document.getElementById('modal-title').textContent = '新しい商品を追加';
+            document.getElementById('edit-id').value = '';
+            document.getElementById('edit-name').value = '';
+            document.getElementById('edit-nameEn').value = '';
+            populateCategoryDropdown('drink');
+            document.getElementById('edit-price').value = '';
+            document.getElementById('edit-hasMorningPrice').checked = false;
+            document.getElementById('morning-price-field').classList.add('hidden');
+            document.getElementById('edit-priceMorning').value = '';
+            document.getElementById('edit-desc').value = '';
+            document.getElementById('edit-descEn').value = '';
+            document.getElementById('edit-image').value = '';
+            updateImagePreview('');
+            document.getElementById('edit-image-file').value = '';
+            document.getElementById('edit-hasOptions').checked = false;
+            document.getElementById('options-list').innerHTML = '';
+            document.getElementById('options-list').classList.add('hidden');
+            document.getElementById('add-option-btn').classList.add('hidden');
+            document.getElementById('options-section').classList.remove('hidden');
+            document.getElementById('new-type-key').value = '';
+            document.getElementById('new-type-name').value = '';
+            document.getElementById('new-type-nameEn').value = '';
+            document.getElementById('new-type-order').value = '';
+
+            document.getElementById('edit-modal').classList.add('show');
+        };
+
+        window.openEditModal = (itemId) => {
+            const item = menuItems.find(i => i.id === itemId);
+            if (!item) return;
+
+            document.getElementById('modal-title').textContent = `${item.name} を編集`;
+            document.getElementById('edit-id').value = item.id;
+            document.getElementById('edit-name').value = item.name || '';
+            document.getElementById('edit-nameEn').value = item.nameEn || '';
+            populateCategoryDropdown(item.type || 'drink');
+            document.getElementById('edit-price').value = item.price || '';
+            // Morning price
+            const hasMorning = item.priceMorning != null && item.priceMorning !== '' && item.priceMorning > 0;
+            document.getElementById('edit-hasMorningPrice').checked = hasMorning;
+            document.getElementById('morning-price-field').classList.toggle('hidden', !hasMorning);
+            document.getElementById('edit-priceMorning').value = item.priceMorning || '';
+            document.getElementById('edit-desc').value = item.desc || '';
+            document.getElementById('edit-descEn').value = item.descEn || '';
+            document.getElementById('edit-image').value = item.image || '';
+            updateImagePreview(item.image || '');
+            document.getElementById('edit-image-file').value = '';
+            
+            // Options
+            document.getElementById('options-section').classList.remove('hidden');
+            const hasOpt = item.hasOptions || false;
+            document.getElementById('edit-hasOptions').checked = hasOpt;
+            
+            const optionsList = document.getElementById('options-list');
+            const addOptBtn = document.getElementById('add-option-btn');
+            optionsList.innerHTML = '';
+            
+            if (hasOpt) {
+                optionsList.classList.remove('hidden');
+                addOptBtn.classList.remove('hidden');
+                (item.options || []).forEach(opt => addOptionRow(opt));
+            } else {
+                optionsList.classList.add('hidden');
+                addOptBtn.classList.add('hidden');
+            }
+
+            document.getElementById('edit-modal').classList.add('show');
+        };
+
+        window.closeEditModal = () => {
+            document.getElementById('edit-modal').classList.remove('show');
+        };
+
+        // hasOptions checkbox toggle
+        document.getElementById('edit-hasOptions').addEventListener('change', (e) => {
+            const show = e.target.checked;
+            document.getElementById('options-list').classList.toggle('hidden', !show);
+            document.getElementById('add-option-btn').classList.toggle('hidden', !show);
+        });
+
+        // Add option row
+        window.addOptionRow = (opt = null) => {
+            const optionsList = document.getElementById('options-list');
+            const row = document.createElement('div');
+            row.className = 'flex gap-2 items-center';
+            row.innerHTML = `
+                <input type="text" class="input-field flex-1" placeholder="名前（例: たまご）" value="${opt?.name || ''}">
+                <button type="button" class="text-red-400 hover:text-red-300 text-xl px-1" onclick="this.parentElement.remove()">×</button>
+            `;
+            optionsList.appendChild(row);
+        };
+
+        // Form submit
+        document.getElementById('edit-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = document.getElementById('edit-id').value;
+            const name = document.getElementById('edit-name').value.trim();
+            const nameEn = document.getElementById('edit-nameEn').value.trim();
+            let type = document.getElementById('edit-type').value;
+            let typeName, typeNameEn, typeOrder;
+
+            // Handle new category creation
+            if (type === '__new__') {
+                type = document.getElementById('new-type-key').value.trim().toLowerCase().replace(/\s+/g, '_');
+                typeName = document.getElementById('new-type-name').value.trim();
+                typeNameEn = document.getElementById('new-type-nameEn').value.trim() || '';
+                // Auto-calculate typeOrder: max existing + 10
+                const existingOrders = getCategories().map(c => c.order);
+                typeOrder = parseInt(document.getElementById('new-type-order').value) || (existingOrders.length > 0 ? Math.max(...existingOrders) + 10 : 10);
+                if (!typeName) {
+                    showToast('カテゴリ名を入力してください', 'error');
+                    return;
+                }
+                if (!type) type = typeName.toLowerCase().replace(/\s+/g, '_');
+            } else {
+                // Use existing category metadata from an existing item of this type
+                const existingItem = menuItems.find(i => i.type === type);
+                typeName = existingItem?.typeName || type;
+                typeNameEn = existingItem?.typeNameEn || type;
+                typeOrder = existingItem?.typeOrder ?? 999;
+            }
+
+            const price = parseInt(document.getElementById('edit-price').value) || 0;
+            const priceMorningVal = document.getElementById('edit-priceMorning').value;
+            const priceMorning = priceMorningVal ? parseInt(priceMorningVal) : null;
+            const desc = document.getElementById('edit-desc').value.trim();
+            const descEn = document.getElementById('edit-descEn').value.trim();
+            const image = document.getElementById('edit-image').value || '';
+            const hasOptions = document.getElementById('edit-hasOptions').checked;
+
+            // Gather options
+            const options = [];
+            if (hasOptions) {
+                document.querySelectorAll('#options-list > div').forEach((row, idx) => {
+                    const inputs = row.querySelectorAll('input');
+                    if (inputs[0].value.trim()) {
+                        options.push({
+                            id: inputs[0].value.trim().toLowerCase().replace(/\s+/g, '_'),
+                            name: inputs[0].value.trim(),
+                            nameEn: '' // auto-translated on customer side
+                        });
+                    }
+                });
+            }
+
+            if (!name) { showToast('商品名を入力してください', 'error'); return; }
+            if (price <= 0) { showToast('価格を正しく入力してください', 'error'); return; }
+
+            const data = {
+                name, nameEn, type, typeName, typeNameEn, typeOrder,
+                price, priceMorning, desc, descEn, image, hasOptions, options
+            };
+
+            try {
+                if (id) {
+                    // Update
+                    await updateMenuItem(id, data);
+                    showToast(`${name} を更新しました`);
+                } else {
+                    // Add new — calculate order
+                    const sameTypeItems = menuItems.filter(i => i.type === type);
+                    data.order = sameTypeItems.length > 0
+                        ? Math.max(...sameTypeItems.map(i => i.order || 0)) + 1
+                        : typeOrder;
+
+                    await addMenuItem(data);
+                    showToast(`${name} を追加しました`);
+                }
+                closeEditModal();
+            } catch (err) {
+                console.error(err);
+                showToast('保存に失敗しました', 'error');
+            }
+        });
+
+        // ============================================================
+        //  DELETE
+        // ============================================================
+        window.confirmDeleteItem = async (itemId, itemName) => {
+            if (confirm(`「${itemName}」を削除しますか？\nこの操作は元に戻せません。`)) {
+                try {
+                    await deleteMenuItem(itemId);
+                    showToast(`${itemName} を削除しました`);
+                } catch (err) {
+                    console.error(err);
+                    showToast('削除に失敗しました', 'error');
+                }
+            }
+        };
+
+        // ============================================================
+        //  TOAST NOTIFICATION
+        // ============================================================
+        function showToast(msg, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.className = `toast toast-${type} show`;
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>
