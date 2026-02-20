@@ -129,6 +129,7 @@
             padding: 0.75rem 1.5rem; border-radius: 0.5rem;
             font-weight: bold; font-size: 0.9rem;
             transform: translateY(100px); opacity: 0; transition: all 0.3s;
+            max-width: 90vw; word-break: break-word;
         }
         .toast.show { transform: translateY(0); opacity: 1; }
         .toast-success { background: #059669; color: white; }
@@ -842,8 +843,9 @@
             updateMenuOrder(updates).then(() => {
                 showToast('並び順を更新しました');
             }).catch(err => {
-                showToast('並び替えに失敗しました', 'error');
                 console.error(err);
+                const code = err.code || 'unknown';
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
             });
         }
 
@@ -877,7 +879,8 @@
                 showToast('並び順を更新しました');
             } catch (err) {
                 console.error(err);
-                showToast('並び替えに失敗しました', 'error');
+                const code = err.code || 'unknown';
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
             }
         };
 
@@ -904,7 +907,8 @@
                 showToast('カテゴリ順を更新しました');
             } catch (err) {
                 console.error(err);
-                showToast('並び替えに失敗しました', 'error');
+                const code = err.code || 'unknown';
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
             }
         };
 
@@ -1099,11 +1103,23 @@
 
             if (!name) { showToast('商品名を入力してください', 'error'); return; }
             if (price <= 0) { showToast('価格を正しく入力してください', 'error'); return; }
+            if (!type) { showToast('カテゴリが選択されていません', 'error'); return; }
+
+            // base64画像サイズチェック（Firestoreドキュメント上限1MB対策）
+            if (image && image.length > 800000) {
+                showToast(`画像データが大きすぎます (${Math.round(image.length / 1024)}KB)。より小さい画像を使用してください`, 'error');
+                return;
+            }
 
             const data = {
                 name, nameEn, type, typeName, typeNameEn, typeOrder,
                 price, priceMorning, desc, descEn, image, hasOptions, options
             };
+
+            // Firestoreはundefinedを拒否するためnullに変換
+            Object.keys(data).forEach(key => {
+                if (data[key] === undefined) data[key] = null;
+            });
 
             try {
                 if (id) {
@@ -1123,7 +1139,8 @@
                 closeEditModal();
             } catch (err) {
                 console.error(err);
-                showToast('保存に失敗しました', 'error');
+                const code = err.code || 'unknown';
+                showToast(`保存に失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
             }
         });
 
@@ -1137,7 +1154,8 @@
                     showToast(`${itemName} を削除しました`);
                 } catch (err) {
                     console.error(err);
-                    showToast('削除に失敗しました', 'error');
+                    const code = err.code || 'unknown';
+                    showToast(`削除に失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
                 }
             }
         };
@@ -1145,11 +1163,26 @@
         // ============================================================
         //  TOAST NOTIFICATION
         // ============================================================
+        function getFirestoreErrorMessage(code) {
+            const messages = {
+                'permission-denied': 'アクセス権限がありません。Firestoreルールを確認してください',
+                'resource-exhausted': 'リソース制限超過。ドキュメントサイズまたはクォータを確認してください',
+                'not-found': 'ドキュメントが見つかりません',
+                'already-exists': 'ドキュメントが既に存在します',
+                'unavailable': 'サービスが一時的に利用できません。再試行してください',
+                'deadline-exceeded': 'タイムアウトしました。ネットワークを確認してください',
+                'unauthenticated': '認証されていません',
+                'invalid-argument': '無効なデータが含まれています',
+            };
+            return messages[code] || 'サーバーエラー';
+        }
+
         function showToast(msg, type = 'success') {
             const toast = document.getElementById('toast');
             toast.textContent = msg;
             toast.className = `toast toast-${type} show`;
-            setTimeout(() => toast.classList.remove('show'), 3000);
+            const duration = type === 'error' ? 6000 : 3000;
+            setTimeout(() => toast.classList.remove('show'), duration);
         }
     </script>
 </body>
