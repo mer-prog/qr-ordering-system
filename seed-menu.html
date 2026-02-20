@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>メニュー初期データ投入</title>
+    <style>
+        body { font-family: monospace; background: #1a1a2e; color: #0f0; padding: 2rem; }
+        pre { white-space: pre-wrap; }
+        button { font-size: 1.2rem; padding: 0.8rem 2rem; margin: 1rem 0; cursor: pointer; background: #0f0; color: #000; border: none; font-family: monospace; }
+        button:disabled { opacity: 0.3; }
+        .error { color: #f00; }
+        .done { color: #0ff; }
+    </style>
+</head>
+<body>
+    <h1>🌱 メニューデータ Seed Script</h1>
+    <p>このスクリプトは既存のハードコードメニューを Firestore の <code>menu</code> コレクションに投入します。</p>
+    <p>⚠️ <strong>1回だけ実行してください。</strong> 複数回実行すると重複します。</p>
+    <button id="seed-btn" onclick="seedMenu()">データを投入する</button>
+    <pre id="log"></pre>
+
+    <script type="module">
+        import { db } from './firebase-config.js';
+        import { collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        const log = document.getElementById('log');
+        const btn = document.getElementById('seed-btn');
+
+        function addLog(msg, cls = '') {
+            const line = document.createElement('div');
+            line.className = cls;
+            line.textContent = msg;
+            log.appendChild(line);
+        }
+
+        const MENU_ITEMS = [
+            // Drinks
+            { name: 'ブレンド珈琲', nameEn: 'Blend Coffee', price: 450, desc: '深煎りのコクと香り', descEn: 'Dark roast with rich aroma', type: 'drink', typeName: '飲み物（ホット・アイス）', typeNameEn: 'Drinks (Hot/Ice)', typeOrder: 0, image: './images/placeholder.png', order: 0, hasOptions: false, priceMorning: null, options: [] },
+            { name: 'アメリカン珈琲', nameEn: 'American Coffee', price: 450, desc: 'すっきりとした味わい', descEn: 'Light and refreshing taste', type: 'drink', typeName: '飲み物（ホット・アイス）', typeNameEn: 'Drinks (Hot/Ice)', typeOrder: 0, image: './images/placeholder.png', order: 1, hasOptions: false, priceMorning: null, options: [] },
+            { name: 'ミルク', nameEn: 'Milk', price: 400, desc: '濃厚な北海道牛乳', descEn: 'Rich Hokkaido milk', type: 'drink', typeName: '飲み物（ホット・アイス）', typeNameEn: 'Drinks (Hot/Ice)', typeOrder: 0, image: './images/placeholder.png', order: 2, hasOptions: false, priceMorning: null, options: [] },
+            { name: '紅茶', nameEn: 'Tea', price: 450, desc: 'ダージリンの香り', descEn: 'Fragrant Darjeeling', type: 'drink', typeName: '飲み物（ホット・アイス）', typeNameEn: 'Drinks (Hot/Ice)', typeOrder: 0, image: './images/placeholder.png', order: 3, hasOptions: false, priceMorning: null, options: [] },
+            
+            // Food (Cakes)
+            { name: 'チーズケーキ', nameEn: 'Cheese Cake', price: 500, desc: '濃厚ベイクドタイプ', descEn: 'Rich baked cheesecake', type: 'food', typeName: '食事', typeNameEn: 'Food', typeOrder: 10, image: './images/placeholder.png', order: 10, hasOptions: false, priceMorning: null, options: [] },
+            { name: 'ショートケーキ', nameEn: 'Short Cake', price: 550, desc: '季節のフルーツ使用', descEn: 'With seasonal fruits', type: 'food', typeName: '食事', typeNameEn: 'Food', typeOrder: 10, image: './images/placeholder.png', order: 11, hasOptions: false, priceMorning: null, options: [] },
+            { name: 'チョコレートケーキ', nameEn: 'Chocolate Cake', price: 500, desc: 'ベルギー産チョコ使用', descEn: 'Belgian chocolate', type: 'food', typeName: '食事', typeNameEn: 'Food', typeOrder: 10, image: './images/placeholder.png', order: 12, hasOptions: false, priceMorning: null, options: [] },
+            { name: 'モンブラン', nameEn: 'Mont Blanc', price: 600, desc: '和栗のペースト', descEn: 'Japanese chestnut paste', type: 'food', typeName: '食事', typeNameEn: 'Food', typeOrder: 10, image: './images/placeholder.png', order: 13, hasOptions: false, priceMorning: null, options: [] },
+
+            // Morning Sets
+            { name: 'Aセット (トースト)', nameEn: 'Set A (Toast)', price: 800, desc: 'トースト＋珈琲', descEn: 'Toast + Coffee', type: 'morning', typeName: 'セット', typeNameEn: 'Sets', typeOrder: 20, image: './images/placeholder.png', order: 20, hasOptions: false, priceMorning: 700, options: [] },
+            { name: 'Bセット (サンドイッチ)', nameEn: 'Set B (Sandwich)', price: 800, desc: 'サンドイッチ＋珈琲', descEn: 'Sandwich + Coffee', type: 'morning', typeName: 'セット', typeNameEn: 'Sets', typeOrder: 20, image: './images/placeholder.png', order: 21, hasOptions: true, priceMorning: 700, options: [
+                { id: 'egg', name: 'たまご', nameEn: 'Egg' },
+                { id: 'potato', name: 'ポテト', nameEn: 'Potato' },
+                { id: 'ham', name: 'ハム', nameEn: 'Ham' }
+            ]},
+        ];
+
+        window.seedMenu = async function() {
+            btn.disabled = true;
+
+            addLog('Checking existing menu data...');
+            try {
+                const existing = await getDocs(collection(db, 'menu'));
+                if (existing.size > 0) {
+                    addLog(`⚠️ menu コレクションに既に ${existing.size} 件のデータがあります。`, 'error');
+                    addLog('重複を避けるため、投入を中止しました。', 'error');
+                    addLog('Firebaseコンソールで menu コレクションを削除してから再実行してください。', 'error');
+                    btn.disabled = false;
+                    return;
+                }
+            } catch(e) {
+                addLog(`Error checking: ${e.message}`, 'error');
+                btn.disabled = false;
+                return;
+            }
+
+            addLog('Starting seed...');
+            let count = 0;
+
+            for (const item of MENU_ITEMS) {
+                try {
+                    const docRef = await addDoc(collection(db, 'menu'), {
+                        ...item,
+                        createdAt: serverTimestamp()
+                    });
+                    count++;
+                    addLog(`✅ [${count}/${MENU_ITEMS.length}] ${item.name} → ${docRef.id}`);
+                } catch(e) {
+                    addLog(`❌ ${item.name}: ${e.message}`, 'error');
+                }
+            }
+
+            addLog('');
+            addLog(`🎉 完了！ ${count}/${MENU_ITEMS.length} 件のメニューを投入しました。`, 'done');
+            addLog('このページを閉じて、admin.html または index.html を確認してください。', 'done');
+        };
+    </script>
+</body>
+</html>

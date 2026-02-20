@@ -1,0 +1,141 @@
+/* Base Reset */
+body {
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Paper Noise Texture via SVG Data URI */
+.noise-bg {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    mix-blend-mode: multiply;
+}
+
+/* Typography Overrides */
+.writing-vertical-rl {
+    writing-mode: vertical-rl;
+}
+
+/* Menu Item Card */
+.menu-item {
+    position: relative;
+    border: 1px solid #4B3621;
+    background-color: rgba(253, 245, 230, 0.8);
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease-out;
+    box-shadow: 2px 2px 0px rgba(75, 54, 33, 0.1);
+}
+
+.menu-item:active {
+    transform: scale(0.98);
+}
+
+.menu-item.selected {
+    background-color: #efe0c8;
+    box-shadow: inset 2px 2px 4px rgba(75, 54, 33, 0.1);
+    border-color: #A40000;
+}
+
+/* Ticket Punch Effect */
+.punch-mark {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: #4B3621; /* Dark "hole" color, actually simpler to just be dark */
+    border-radius: 50%;
+    top: 50%;
+    right: -10px;
+    transform: translateY(-50%) scale(0);
+    z-index: 20;
+    /* Simulate a hole by using box-shadow to create depth, or mask-image if browser supports */
+    background: radial-gradient(circle, transparent 9px, #4B3621 10px);
+    background-size: 200% 200%;
+    background-position: center;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.5);
+    opacity: 0;
+    transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* A simpler visual punch: Just a circle that appears */
+.menu-item.selected .punch-mark {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+    background-color: #2A1F1B; /* The color of the "background" showing through */
+    box-shadow: inset 2px 2px 3px rgba(0,0,0,0.6), 1px 1px 0px rgba(255,255,255,0.3);
+}
+
+/* Additional visual cue for selected items */
+.menu-item.selected::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0; width: 4px;
+    background-color: #A40000;
+}
+
+
+/* CRT Turn Off Animation */
+@keyframes turn-off {
+    0% {
+        transform: scale(1, 1.3) translate3d(0, 0, 0);
+        filter: brightness(1);
+        opacity: 1;
+    }
+    60% {
+        transform: scale(1, 0.001) translate3d(0, 0, 0);
+        filter: brightness(10);
+    }
+    100% {
+        animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);
+        transform: scale(0, 0.001) translate3d(0, 0, 0);
+        opacity: 0;
+    }
+}
+
+.crt-animate {
+    animation: turn-off 0.55s cubic-bezier(0.23, 1, 0.32, 1);
+    animation-fill-mode: forwards;
+    background-color: #111;
+    display: block !important;
+}
+
+/* Register Key Press Animation Helper */
+.register-key-down {
+    transform: translateY(4px) !important;
+    box-shadow: none !important;
+}
+
+/* Receipt Loading / Printing Effect (for post-submission if needed, simplistic for now) */
+@keyframes loading-dots {
+    0%, 20% { content: "."; }
+    40% { content: ".."; }
+    60%, 100% { content: "..."; }
+}
+
+/* Quantity Controls */
+.qty-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid #4B3621;
+    background-color: #FDF5E6;
+    color: #4B3621;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 1px 1px 0px rgba(75, 54, 33, 0.2);
+    transition: all 0.1s;
+    user-select: none;
+}
+
+.qty-btn:active {
+    transform: translate(1px, 1px);
+    box-shadow: none;
+    background-color: #efe0c8;
+}
+
+.qty-display-wrapper {
+    min-width: 60px;
+    text-align: center;
+}
