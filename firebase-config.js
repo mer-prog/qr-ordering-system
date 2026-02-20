@@ -3,8 +3,10 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
 
-// スクリーンショットから転記した井木様の正確なキー情報
+// Firebase設定
+// ※ Firebase APIキーはFirebaseコンソールでドメイン制限を設定してください
 const firebaseConfig = {
   apiKey: "AIzaSyCllVVFZhd7wozV-HrqS0JL0Gk-VJjcB7U",
   authDomain: "aibuzz-retro-cafe.firebaseapp.com",
@@ -14,11 +16,14 @@ const firebaseConfig = {
   appId: "1:265313379086:web:ac767a79646d266cd96d5f"
 };
 
-// アプリを初期化（イグニッションON）
+// アプリを初期化
 const app = initializeApp(firebaseConfig);
 
-// データベースを初期化（ここが重要！）
+// データベースを初期化
 const db = getFirestore(app);
 
-// 他のファイル（db-service.jsなど）で使えるように db を送り出す
-export { db };
+// 認証を初期化
+const auth = getAuth(app);
+
+// 他のファイルで使えるようにエクスポート
+export { db, auth, signInWithEmailAndPassword, signOut, onAuthStateChanged };

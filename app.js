@@ -1,8 +1,29 @@
 import { addOrder, subscribeToMenu } from './db-service.js';
 
-// Configuration
-const TABLE_ID = new URLSearchParams(window.location.search).get('table') || 1;
+// ============================================================
+//  SECURITY: HTML ESCAPE HELPER
+// ============================================================
+function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// Configuration — validate table ID
+const rawTableId = new URLSearchParams(window.location.search).get('table');
+const parsedTableId = parseInt(rawTableId, 10);
+const TABLE_ID = (parsedTableId >= 1 && parsedTableId <= 99) ? parsedTableId : 1;
 let currentLang = 'ja'; // 'ja' or 'en'
+
+// ============================================================
+//  RATE LIMITING
+// ============================================================
+const ORDER_RATE_LIMIT = { maxOrders: 5, windowMs: 60000 }; // 5 orders per minute
+const orderTimestamps = [];
 
 // ============================================================
 //  AUTO-TRANSLATION CACHE (ja → en)
@@ -30,7 +51,7 @@ async function translateText(text) {
             return translated;
         }
     } catch (err) {
-        console.warn('Translation failed for:', text, err);
+        // Translation failed silently
     }
     return text; // fallback to original
 }
@@ -226,7 +247,7 @@ function renderMenu() {
         sectionEl.className = 'col-span-full mt-6 mb-4 select-none';
         sectionEl.innerHTML = `
             <div class="flex items-center gap-4">
-                <h2 class="text-xl font-bold text-retro-brown font-serif tracking-widest">${sectionTitle}</h2>
+                <h2 class="text-xl font-bold text-retro-brown font-serif tracking-widest">${escapeHtml(sectionTitle)}</h2>
                 <div class="flex-grow border-b-2 border-retro-brown opacity-30 border-dotted"></div>
             </div>
         `;
@@ -236,20 +257,26 @@ function renderMenu() {
         gridEl.className = 'grid grid-cols-1 gap-6 col-span-full';
         
         gridEl.innerHTML = items.map(item => {
-            const price = getPrice(item);
-            const name = getLocalizedText(item, 'name');
-            const desc = getLocalizedText(item, 'desc');
-            
+            const price = parseInt(getPrice(item)) || 0;
+            const name = escapeHtml(getLocalizedText(item, 'name'));
+            const desc = escapeHtml(getLocalizedText(item, 'desc'));
+            const safeId = escapeHtml(item.id);
+
             const hasOptions = item.hasOptions;
-            const clickAction = hasOptions ? `openSandwichModal('${item.id}')` : `updateQuantity('${item.id}', 1)`;
-            const minusAction = hasOptions ? `openSandwichModal('${item.id}')` : `updateQuantity('${item.id}', -1)`; 
-            
-            const imageHtml = item.image
-                ? `<img src="${item.image}" alt="${name}" class="w-full h-full object-cover sepia-[.3] group-hover:sepia-0 transition-all duration-300">`
-                : `<div class="w-full h-full flex items-center justify-center bg-retro-brown/5 text-3xl opacity-40">☕</div>`;
+            const clickAction = hasOptions ? `openSandwichModal('${safeId}')` : `updateQuantity('${safeId}', 1)`;
+            const minusAction = hasOptions ? `openSandwichModal('${safeId}')` : `updateQuantity('${safeId}', -1)`;
+
+            let imageHtml;
+            if (item.image && item.image.startsWith('data:image/')) {
+                imageHtml = `<img src="${item.image}" alt="${name}" class="w-full h-full object-cover sepia-[.3] group-hover:sepia-0 transition-all duration-300">`;
+            } else if (item.image && /^\.?\/images\//.test(item.image)) {
+                imageHtml = `<img src="${escapeHtml(item.image)}" alt="${name}" class="w-full h-full object-cover sepia-[.3] group-hover:sepia-0 transition-all duration-300">`;
+            } else {
+                imageHtml = `<div class="w-full h-full flex items-center justify-center bg-retro-brown/5 text-3xl opacity-40">☕</div>`;
+            }
 
             return `
-            <div class="menu-item group" data-id="${item.id}">
+            <div class="menu-item group" data-id="${safeId}">
                 <div class="flex items-start select-none">
                     <div class="w-24 h-24 mr-4 flex-shrink-0 rounded overflow-hidden border border-retro-brown/20 relative" onclick="${clickAction}">
                         ${imageHtml}
@@ -263,7 +290,7 @@ function renderMenu() {
                         <div class="flex justify-between items-end">
                             <p class="font-mono text-lg text-retro-red tracking-wider">¥${price}</p>
                             <div class="flex items-center gap-3 z-10">
-                                <button class="qty-btn opacity-0 pointer-events-none transition-opacity duration-200" onclick="${minusAction}" data-btn-minus="${item.id}">－</button>
+                                <button class="qty-btn opacity-0 pointer-events-none transition-opacity duration-200" onclick="${minusAction}" data-btn-minus="${safeId}">－</button>
                                 <div class="qty-display-wrapper">
                                     <span class="quantity-display text-2xl font-mono font-bold opacity-30">0</span>
                                 </div>
@@ -295,15 +322,16 @@ window.openSandwichModal = (parentId) => {
     const options = SANDWICH_OPTIONS.filter(o => o.parentId === parentId);
     
     optionsContainer.innerHTML = options.map(opt => {
-        const qty = cart[opt.id] || 0;
-        const name = getLocalizedText(opt, 'name');
+        const qty = parseInt(cart[opt.id]) || 0;
+        const name = escapeHtml(getLocalizedText(opt, 'name'));
+        const safeOptId = escapeHtml(opt.id);
         return `
         <div class="flex justify-between items-center bg-[#e8e4da] p-3 rounded border border-retro-brown/20">
             <span class="font-serif font-bold text-retro-brown">${name}</span>
             <div class="flex items-center gap-3">
-                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-white border border-retro-brown/30 rounded-full text-retro-brown shadow-sm active:translate-y-px" onclick="updateQuantity('${opt.id}', -1, true)">－</button>
-                <span class="font-mono text-xl w-6 text-center font-bold" id="qty-${opt.id}">${qty}</span>
-                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-retro-red text-white border border-retro-red rounded-full shadow-sm active:translate-y-px" onclick="updateQuantity('${opt.id}', 1, true)">＋</button>
+                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-white border border-retro-brown/30 rounded-full text-retro-brown shadow-sm active:translate-y-px" onclick="updateQuantity('${safeOptId}', -1, true)">－</button>
+                <span class="font-mono text-xl w-6 text-center font-bold" id="qty-${safeOptId}">${qty}</span>
+                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-retro-red text-white border border-retro-red rounded-full shadow-sm active:translate-y-px" onclick="updateQuantity('${safeOptId}', 1, true)">＋</button>
             </div>
         </div>
         `;
@@ -416,11 +444,19 @@ function updateOrderButton() {
 orderBtn.addEventListener('click', async () => {
     if (Object.keys(cart).length === 0) return;
 
+    // Rate limit check
+    const now = Date.now();
+    const recentOrders = orderTimestamps.filter(t => now - t < ORDER_RATE_LIMIT.windowMs);
+    if (recentOrders.length >= ORDER_RATE_LIMIT.maxOrders) {
+        alert('注文の頻度が高すぎます。しばらくしてから再試行してください。');
+        return;
+    }
+
     orderBtn.disabled = true;
 
     crtOverlay.classList.remove('hidden');
     crtOverlay.classList.add('crt-animate');
-    
+
     await new Promise(r => setTimeout(r, 600));
 
     try {
@@ -442,16 +478,24 @@ orderBtn.addEventListener('click', async () => {
                 }
             }
 
+            // Validate quantity
+            const safeQty = Math.max(1, Math.min(99, Math.floor(qty)));
+
             return {
                 id: id,
                 name: name,
                 nameEn: nameEn,
-                price: price, 
-                quantity: qty
+                price: parseInt(price) || 0,
+                quantity: safeQty
             };
-        });
+        }).filter(item => item.name && item.price >= 0);
+
+        if (orderItems.length === 0) {
+            throw new Error('注文内容が無効です');
+        }
 
         await addOrder(TABLE_ID, orderItems);
+        orderTimestamps.push(Date.now());
         
         const modal = document.getElementById('order-complete-modal');
         const modalContent = modal.querySelector('div');
@@ -464,7 +508,6 @@ orderBtn.addEventListener('click', async () => {
         });
 
     } catch (e) {
-        console.error(e);
         alert("注文に失敗しました。店員をお呼びください。");
         crtOverlay.classList.remove('crt-animate');
         crtOverlay.classList.add('hidden');

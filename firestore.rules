@@ -3,20 +3,28 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // 【メニュー】
-    // お客さんは「見るだけ」。管理画面から編集可能。
-    // ※認証未実装のため、write は一旦 true にする
+    // 誰でも読み取り可能（お客様の注文画面用）
+    // 書き込みは認証済みユーザーのみ（管理画面用）
     match /menu/{item} {
       allow read: if true;
-      allow write: if true;
+      allow write: if request.auth != null;
     }
 
     // 【注文】
-    // お客さんは「注文作成」ができる。
-    // 店員用アプリがまだ認証未実装のため、確認と更新は「誰でもOK」。
-    // ただし「削除」は禁止して履歴を守る。
+    // お客さんは「注文作成」ができる（認証不要）
+    // ただし、注文データのバリデーションを実施
+    // 読み取り・更新は認証済みユーザーのみ（管理画面用）
+    // 削除は禁止して履歴を守る
     match /orders/{order} {
-      allow create: if true;
-      allow read, update: if true;
+      allow create: if true
+        && request.resource.data.tableId is int
+        && request.resource.data.tableId >= 1
+        && request.resource.data.tableId <= 99
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 50
+        && request.resource.data.status == 'pending';
+      allow read, update: if request.auth != null;
       allow delete: if false;
     }
 

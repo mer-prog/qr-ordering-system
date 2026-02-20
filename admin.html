@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://*.googleapis.com https://*.firebaseio.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net;">
     <title>厨房・オーダー管理（黒板）</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Kaisei+Decol:wght@400;700&display=swap" rel="stylesheet">
@@ -138,6 +141,33 @@
 </head>
 <body class="min-h-screen p-4 flex flex-col h-screen overflow-hidden">
 
+    <!-- ========== LOGIN OVERLAY ========== -->
+    <div id="login-overlay" class="fixed inset-0 z-[999] bg-[#2b2b2b] flex items-center justify-center">
+        <div class="bg-[#333] border border-white/20 rounded-xl p-8 max-w-sm w-full mx-4 shadow-2xl">
+            <h2 class="text-2xl font-bold text-yellow-400 mb-6 text-center tracking-widest">管理者ログイン</h2>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">メールアドレス</label>
+                    <input type="email" id="login-email" class="input-field" required placeholder="admin@example.com" autocomplete="email">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-400 block mb-1">パスワード</label>
+                    <input type="password" id="login-password" class="input-field" required placeholder="パスワード" autocomplete="current-password">
+                </div>
+                <div id="login-error" class="text-red-400 text-sm hidden"></div>
+                <button type="submit" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded-lg transition-colors">ログイン</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== SESSION TIMEOUT NOTICE ========== -->
+    <div id="session-timeout" class="fixed inset-0 z-[998] bg-black/80 flex items-center justify-center hidden">
+        <div class="bg-[#333] border border-white/20 rounded-xl p-6 max-w-sm w-full mx-4 text-center">
+            <p class="text-lg text-yellow-400 mb-4">セッションがタイムアウトしました</p>
+            <button onclick="window.location.reload()" class="bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-2 px-6 rounded-lg">再ログイン</button>
+        </div>
+    </div>
+
     <header class="flex-none flex justify-between items-end mb-4 border-b border-gray-500 pb-2">
         <div>
             <h1 class="text-3xl font-bold text-white mb-1 tracking-widest pl-4 border-l-4 border-yellow-600">
@@ -152,6 +182,7 @@
         <div class="text-right">
             <div class="text-3xl font-mono text-yellow-500 font-bold" id="clock">--:--</div>
             <div class="text-gray-400 text-sm">本日の売上: <span id="daily-sales" class="text-white font-bold text-lg">¥0</span></div>
+            <button id="logout-btn" class="text-xs text-gray-500 hover:text-red-400 mt-1 transition-colors hidden" onclick="handleLogout()">ログアウト</button>
         </div>
     </header>
 
@@ -339,10 +370,79 @@
     <div id="toast" class="toast"></div>
 
     <script type="module">
-        import { 
+        import {
             subscribeToOrders, updateOrderStatus, deleteOrder,
             subscribeToMenu, addMenuItem, updateMenuItem, deleteMenuItem, updateMenuOrder
         } from './db-service.js';
+        import { auth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from './firebase-config.js';
+
+        // ============================================================
+        //  AUTHENTICATION
+        // ============================================================
+        const loginOverlay = document.getElementById('login-overlay');
+        const loginForm = document.getElementById('login-form');
+        const loginError = document.getElementById('login-error');
+        const logoutBtn = document.getElementById('logout-btn');
+        let sessionTimer = null;
+        const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
+
+        function resetSessionTimer() {
+            clearTimeout(sessionTimer);
+            sessionTimer = setTimeout(() => {
+                document.getElementById('session-timeout').classList.remove('hidden');
+                signOut(auth);
+            }, SESSION_TIMEOUT_MS);
+        }
+
+        // Track user activity for session timeout
+        ['click', 'keydown', 'touchstart'].forEach(evt => {
+            document.addEventListener(evt, resetSessionTimer, { passive: true });
+        });
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loginOverlay.style.display = 'none';
+                logoutBtn.classList.remove('hidden');
+                resetSessionTimer();
+            } else {
+                loginOverlay.style.display = 'flex';
+                logoutBtn.classList.add('hidden');
+                clearTimeout(sessionTimer);
+            }
+        });
+
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loginError.classList.add('hidden');
+            const email = document.getElementById('login-email').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (err) {
+                loginError.textContent = 'メールアドレスまたはパスワードが正しくありません';
+                loginError.classList.remove('hidden');
+            }
+        });
+
+        window.handleLogout = async () => {
+            if (confirm('ログアウトしますか？')) {
+                await signOut(auth);
+            }
+        };
+
+        // ============================================================
+        //  SECURITY: HTML ESCAPE HELPER
+        // ============================================================
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
 
         // ============================================================
         //  SHARED STATE
@@ -444,10 +544,17 @@
 
         function updateImagePreview(src) {
             const preview = document.getElementById('image-preview');
-            if (src && src.length > 10) {
-                preview.innerHTML = `<img src="${src}" class="w-full h-full object-cover">`;
+            preview.innerHTML = '';
+            if (src && src.length > 10 && src.startsWith('data:image/')) {
+                const img = document.createElement('img');
+                img.src = src;
+                img.className = 'w-full h-full object-cover';
+                preview.appendChild(img);
             } else {
-                preview.innerHTML = `<span class="text-gray-500 text-xs">No Image</span>`;
+                const span = document.createElement('span');
+                span.className = 'text-gray-500 text-xs';
+                span.textContent = 'No Image';
+                preview.appendChild(span);
             }
         }
 
@@ -480,30 +587,31 @@
         function renderPendingCard(order) {
             const itemsHtml = order.items.map(item => `
                 <div class="flex justify-between items-baseline border-b border-gray-400 border-dotted pb-1 mb-1 last:border-0 text-gray-800">
-                    <span class="text-md font-serif">${item.name}</span>
-                    <span class="font-mono text-red-600 font-bold">x${item.quantity}</span>
+                    <span class="text-md font-serif">${escapeHtml(item.name)}</span>
+                    <span class="font-mono text-red-600 font-bold">x${parseInt(item.quantity) || 0}</span>
                 </div>
             `).join('');
 
             const timeStr = order.timestamp ? order.timestamp.toDate().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
-            const orderIdShort = order.id.slice(-4).toUpperCase();
+            const orderIdShort = escapeHtml(order.id.slice(-4).toUpperCase());
+            const safeOrderId = escapeHtml(order.id);
 
             const el = document.createElement('div');
             el.className = 'paper-slip p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
             el.innerHTML = `
                 <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-gray-400 pb-1">
-                    <span class="font-bold text-gray-900 text-lg">卓番: <span class="font-mono text-2xl">${order.tableId}</span></span>
+                    <span class="font-bold text-gray-900 text-lg">卓番: <span class="font-mono text-2xl">${parseInt(order.tableId) || 0}</span></span>
                     <span class="text-xs text-gray-500 font-mono">#${orderIdShort}</span>
                 </div>
-                <div class="text-xs text-right text-gray-500 mb-2">${timeStr}</div>
+                <div class="text-xs text-right text-gray-500 mb-2">${escapeHtml(timeStr)}</div>
                 <div class="space-y-1 mb-3 text-sm">
                     ${itemsHtml}
                 </div>
-                <button class="w-full bg-red-800 text-white border-b-4 border-red-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="updateOrderStatus('${order.id}', 'served')">
+                <button class="w-full bg-red-800 text-white border-b-4 border-red-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="updateOrderStatus('${safeOrderId}', 'served')">
                     提供完了
                 </button>
                  <div class="text-right mt-1">
-                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-red-700 hover:underline" onclick="deleteOrderPermanently('${order.id}')">削除</span>
+                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-red-700 hover:underline" onclick="deleteOrderPermanently('${safeOrderId}')">削除</span>
                 </div>
             `;
             return el;
@@ -531,8 +639,8 @@
 
             const itemsHtml = Object.values(mergedItems).map(item => `
                 <div class="flex justify-between items-baseline border-b border-cyan-700/20 border-dotted pb-1 mb-1 last:border-0 text-cyan-900">
-                    <span class="text-md font-serif">${item.name}</span>
-                    <span class="font-mono font-bold">x${item.quantity}</span>
+                    <span class="text-md font-serif">${escapeHtml(item.name)}</span>
+                    <span class="font-mono font-bold">x${parseInt(item.quantity) || 0}</span>
                 </div>
             `).join('');
 
@@ -542,18 +650,18 @@
             el.className = 'paper-slip-served p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
             el.innerHTML = `
                 <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-cyan-700/30 pb-1">
-                    <span class="font-bold text-cyan-900 text-lg">卓番: <span class="font-mono text-2xl">${tableId}</span></span>
+                    <span class="font-bold text-cyan-900 text-lg">卓番: <span class="font-mono text-2xl">${parseInt(tableId) || 0}</span></span>
                     <span class="text-xs bg-cyan-100 text-cyan-800 px-1 rounded border border-cyan-300">伝票</span>
                 </div>
-                <div class="text-xs text-right text-cyan-700 mb-2">First: ${timeStr}</div>
+                <div class="text-xs text-right text-cyan-700 mb-2">First: ${escapeHtml(timeStr)}</div>
                 <div class="space-y-1 mb-3 text-sm">
                     ${itemsHtml}
                 </div>
                 <div class="flex justify-between items-end border-t border-cyan-700/30 pt-2 mb-3">
                     <span class="text-xs text-cyan-700">合計</span>
-                    <span class="text-xl font-mono font-bold text-cyan-900">¥${total.toLocaleString()}</span>
+                    <span class="text-xl font-mono font-bold text-cyan-900">¥${parseInt(total).toLocaleString()}</span>
                 </div>
-                <button class="w-full bg-cyan-700 text-white border-b-4 border-cyan-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="completeTableOrders([${orders.map(o => `'${o.id}'`).join(',')}])">
+                <button class="w-full bg-cyan-700 text-white border-b-4 border-cyan-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="completeTableOrders([${orders.map(o => `'${escapeHtml(o.id)}'`).join(',')}])">
                     会計完了
                 </button>
             `;
@@ -568,11 +676,11 @@
             el.className = 'bg-white/5 p-2 rounded border border-white/10 flex justify-between items-center text-sm hover:bg-white/10 transition-colors';
             el.innerHTML = `
                 <div class="flex items-center gap-3 text-gray-300 min-w-0">
-                    <span class="font-mono text-xs opacity-50">${timeStr}</span>
-                    <span class="font-bold shrink-0">卓番:${order.tableId}</span>
-                    <span class="truncate opacity-70 text-xs">${order.items.map(i => i.name).join(', ')}</span>
+                    <span class="font-mono text-xs opacity-50">${escapeHtml(timeStr)}</span>
+                    <span class="font-bold shrink-0">卓番:${parseInt(order.tableId) || 0}</span>
+                    <span class="truncate opacity-70 text-xs">${escapeHtml(order.items.map(i => i.name).join(', '))}</span>
                 </div>
-                <span class="font-mono text-gray-400 ml-2">¥${total.toLocaleString()}</span>
+                <span class="font-mono text-gray-400 ml-2">¥${parseInt(total).toLocaleString()}</span>
             `;
             return el;
         }
@@ -680,7 +788,7 @@
                         if (orderDate >= today) {
                             totalSales += order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                         }
-                    } catch (e) { console.warn(e); }
+                    } catch (e) { /* ignore parse error */ }
                 }
             });
             dailySalesEl.textContent = `¥${totalSales.toLocaleString()}`;
@@ -723,10 +831,10 @@
                 headerRow.innerHTML = `
                     <td colspan="6" class="category-header">
                         <div class="flex items-center gap-2">
-                            <span>${cat.name} (${items.length}品)</span>
+                            <span>${escapeHtml(cat.name)} (${items.length}品)</span>
                             <div class="flex gap-1 ml-auto">
-                                <button class="text-gray-400 ${catUpDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', -1)" title="カテゴリを上へ">▲</button>
-                                <button class="text-gray-400 ${catDownDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', 1)" title="カテゴリを下へ">▼</button>
+                                <button class="text-gray-400 ${catUpDisabled} text-sm px-1" onclick="moveCategory('${escapeHtml(cat.id)}', -1)" title="カテゴリを上へ">▲</button>
+                                <button class="text-gray-400 ${catDownDisabled} text-sm px-1" onclick="moveCategory('${escapeHtml(cat.id)}', 1)" title="カテゴリを下へ">▼</button>
                             </div>
                         </div>
                     </td>
@@ -740,32 +848,35 @@
                     tr.draggable = true;
 
                     const optionsBadge = item.hasOptions && item.options?.length > 0
-                        ? `<span class="text-xs bg-yellow-900/50 text-yellow-300 px-1.5 py-0.5 rounded ml-2">${item.options.length}種</span>`
+                        ? `<span class="text-xs bg-yellow-900/50 text-yellow-300 px-1.5 py-0.5 rounded ml-2">${parseInt(item.options.length) || 0}種</span>`
                         : '';
 
                     const upDisabled = idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
                     const downDisabled = idx === items.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
 
+                    const safeItemId = escapeHtml(item.id);
+                    const safeItemName = escapeHtml(item.name);
+
                     tr.innerHTML = `
                         <td>
                             <div class="flex flex-col items-center gap-0.5">
-                                <button class="text-gray-500 ${upDisabled} text-xs leading-none" onclick="moveItem('${item.id}', -1)">▲</button>
-                                <button class="text-gray-500 ${downDisabled} text-xs leading-none" onclick="moveItem('${item.id}', 1)">▼</button>
+                                <button class="text-gray-500 ${upDisabled} text-xs leading-none" onclick="moveItem('${safeItemId}', -1)">▲</button>
+                                <button class="text-gray-500 ${downDisabled} text-xs leading-none" onclick="moveItem('${safeItemId}', 1)">▼</button>
                             </div>
                         </td>
                         <td>
                             <div class="flex items-center gap-2">
-                                <div class="font-bold text-sm">${item.name}</div>
+                                <div class="font-bold text-sm">${safeItemName}</div>
                                 ${optionsBadge}
                             </div>
                         </td>
-                        <td><span class="text-xs px-2 py-0.5 rounded bg-white/10">${item.typeName || item.type}</span></td>
-                        <td class="font-mono font-bold">¥${item.price?.toLocaleString()}</td>
-                        <td class="font-mono text-sm ${item.priceMorning ? 'text-yellow-400' : 'text-gray-600'}">${item.priceMorning ? '¥' + item.priceMorning.toLocaleString() : '—'}</td>
+                        <td><span class="text-xs px-2 py-0.5 rounded bg-white/10">${escapeHtml(item.typeName || item.type)}</span></td>
+                        <td class="font-mono font-bold">¥${(parseInt(item.price) || 0).toLocaleString()}</td>
+                        <td class="font-mono text-sm ${item.priceMorning ? 'text-yellow-400' : 'text-gray-600'}">${item.priceMorning ? '¥' + (parseInt(item.priceMorning) || 0).toLocaleString() : '—'}</td>
                         <td>
                             <div class="flex gap-2">
-                                <button class="btn-action btn-save" onclick="openEditModal('${item.id}')">編集</button>
-                                <button class="btn-action btn-delete" onclick="confirmDeleteItem('${item.id}', '${item.name}')">削除</button>
+                                <button class="btn-action btn-save" onclick="openEditModal('${safeItemId}')">編集</button>
+                                <button class="btn-action btn-delete" onclick="confirmDeleteItem('${safeItemId}', '${safeItemName}')">削除</button>
                             </div>
                         </td>
                     `;
@@ -843,9 +954,8 @@
             updateMenuOrder(updates).then(() => {
                 showToast('並び順を更新しました');
             }).catch(err => {
-                console.error(err);
                 const code = err.code || 'unknown';
-                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)}`, 'error');
             });
         }
 
@@ -878,9 +988,8 @@
                 await updateMenuItem(sameCategory[targetIdx].id, { order: myOrder });
                 showToast('並び順を更新しました');
             } catch (err) {
-                console.error(err);
                 const code = err.code || 'unknown';
-                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)}`, 'error');
             }
         };
 
@@ -906,9 +1015,8 @@
                 }
                 showToast('カテゴリ順を更新しました');
             } catch (err) {
-                console.error(err);
                 const code = err.code || 'unknown';
-                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
+                showToast(`並び替えに失敗しました: ${getFirestoreErrorMessage(code)}`, 'error');
             }
         };
 
@@ -986,7 +1094,7 @@
             const item = menuItems.find(i => i.id === itemId);
             if (!item) return;
 
-            document.getElementById('modal-title').textContent = `${item.name} を編集`;
+            document.getElementById('modal-title').textContent = `${item.name || ''} を編集`;
             document.getElementById('edit-id').value = item.id;
             document.getElementById('edit-name').value = item.name || '';
             document.getElementById('edit-nameEn').value = item.nameEn || '';
@@ -1041,7 +1149,7 @@
             const row = document.createElement('div');
             row.className = 'flex gap-2 items-center';
             row.innerHTML = `
-                <input type="text" class="input-field flex-1" placeholder="名前（例: たまご）" value="${opt?.name || ''}">
+                <input type="text" class="input-field flex-1" placeholder="名前（例: たまご）" value="${escapeHtml(opt?.name || '')}">
                 <button type="button" class="text-red-400 hover:text-red-300 text-xl px-1" onclick="this.parentElement.remove()">×</button>
             `;
             optionsList.appendChild(row);
@@ -1138,9 +1246,8 @@
                 }
                 closeEditModal();
             } catch (err) {
-                console.error(err);
                 const code = err.code || 'unknown';
-                showToast(`保存に失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
+                showToast(`保存に失敗しました: ${getFirestoreErrorMessage(code)}`, 'error');
             }
         });
 
@@ -1153,9 +1260,8 @@
                     await deleteMenuItem(itemId);
                     showToast(`${itemName} を削除しました`);
                 } catch (err) {
-                    console.error(err);
                     const code = err.code || 'unknown';
-                    showToast(`削除に失敗しました: ${getFirestoreErrorMessage(code)} (${code})`, 'error');
+                    showToast(`削除に失敗しました: ${getFirestoreErrorMessage(code)}`, 'error');
                 }
             }
         };
@@ -1165,16 +1271,16 @@
         // ============================================================
         function getFirestoreErrorMessage(code) {
             const messages = {
-                'permission-denied': 'アクセス権限がありません。Firestoreルールを確認してください',
-                'resource-exhausted': 'リソース制限超過。ドキュメントサイズまたはクォータを確認してください',
-                'not-found': 'ドキュメントが見つかりません',
-                'already-exists': 'ドキュメントが既に存在します',
+                'permission-denied': 'アクセス権限がありません',
+                'resource-exhausted': 'サーバーが混み合っています。しばらくしてから再試行してください',
+                'not-found': 'データが見つかりません',
+                'already-exists': 'データが既に存在します',
                 'unavailable': 'サービスが一時的に利用できません。再試行してください',
                 'deadline-exceeded': 'タイムアウトしました。ネットワークを確認してください',
-                'unauthenticated': '認証されていません',
-                'invalid-argument': '無効なデータが含まれています',
+                'unauthenticated': '認証されていません。ログインし直してください',
+                'invalid-argument': '無効なデータです',
             };
-            return messages[code] || 'サーバーエラー';
+            return messages[code] || 'エラーが発生しました';
         }
 
         function showToast(msg, type = 'success') {

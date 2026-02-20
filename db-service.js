@@ -35,10 +35,8 @@ export const addOrder = async (tableId, items) => {
             timestamp: serverTimestamp()
         };
         const docRef = await addDoc(collection(db, ORDERS_COLLECTION), orderData);
-        console.log("Order placed with ID: ", docRef.id);
         return docRef.id;
     } catch (e) {
-        console.error("Error adding order: ", e);
         throw e;
     }
 };
@@ -66,9 +64,7 @@ export const subscribeToOrders = (callback) => {
 export const deleteOrder = async (orderId) => {
     try {
         await deleteDoc(doc(db, ORDERS_COLLECTION, orderId));
-        console.log(`Order ${orderId} deleted`);
     } catch (e) {
-        console.error("Error deleting order: ", e);
         throw e;
     }
 };
@@ -89,9 +85,7 @@ export const updateOrderStatus = async (orderId, newStatus) => {
         }
 
         await updateDoc(orderRef, updateData);
-        console.log(`Order ${orderId} updated to: ${newStatus}`);
     } catch (e) {
-        console.error("Error updating status: ", e);
         throw e;
     }
 };
@@ -114,7 +108,6 @@ export const getMenuItems = async () => {
         });
         return items;
     } catch (e) {
-        console.error("Error fetching menu: ", e);
         throw e;
     }
 };
@@ -146,10 +139,8 @@ export const addMenuItem = async (item) => {
             ...item,
             createdAt: serverTimestamp()
         });
-        console.log("Menu item added with ID: ", docRef.id);
         return docRef.id;
     } catch (e) {
-        console.error("Error adding menu item: ", e);
         throw e;
     }
 };
@@ -166,9 +157,7 @@ export const updateMenuItem = async (itemId, data) => {
             ...data,
             updatedAt: serverTimestamp()
         });
-        console.log(`Menu item ${itemId} updated`);
     } catch (e) {
-        console.error("Error updating menu item: ", e);
         throw e;
     }
 };
@@ -180,9 +169,7 @@ export const updateMenuItem = async (itemId, data) => {
 export const deleteMenuItem = async (itemId) => {
     try {
         await deleteDoc(doc(db, MENU_COLLECTION, itemId));
-        console.log(`Menu item ${itemId} deleted`);
     } catch (e) {
-        console.error("Error deleting menu item: ", e);
         throw e;
     }
 };
@@ -199,9 +186,7 @@ export const updateMenuOrder = async (items) => {
             batch.update(ref, { order: order });
         });
         await batch.commit();
-        console.log("Menu order updated");
     } catch (e) {
-        console.error("Error updating menu order: ", e);
         throw e;
     }
 };
