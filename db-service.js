@@ -28,10 +28,28 @@ const MENU_COLLECTION = 'menu';
  */
 export const addOrder = async (tableId, items) => {
     try {
+        // Input validation
+        const safeTableId = Number(tableId);
+        if (!Number.isFinite(safeTableId) || safeTableId < 1 || safeTableId > 100) {
+            throw new Error('Invalid table ID');
+        }
+        if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
+            throw new Error('Invalid order items');
+        }
+
+        // Sanitize each item
+        const safeItems = items.map(item => ({
+            id: String(item.id || '').slice(0, 100),
+            name: String(item.name || '').slice(0, 200),
+            nameEn: String(item.nameEn || '').slice(0, 200),
+            price: Number(item.price) || 0,
+            quantity: Math.max(1, Math.min(99, parseInt(item.quantity) || 1))
+        }));
+
         const orderData = {
-            tableId: Number(tableId),
-            items: items,
-            status: 'pending', // Initial status
+            tableId: safeTableId,
+            items: safeItems,
+            status: 'pending',
             timestamp: serverTimestamp()
         };
         const docRef = await addDoc(collection(db, ORDERS_COLLECTION), orderData);
@@ -80,9 +98,15 @@ export const deleteOrder = async (orderId) => {
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
     try {
+        // Validate status transitions
+        const validStatuses = ['pending', 'served', 'paid'];
+        if (!validStatuses.includes(newStatus)) {
+            throw new Error(`Invalid status: ${newStatus}`);
+        }
+
         const orderRef = doc(db, ORDERS_COLLECTION, orderId);
         const updateData = { status: newStatus };
-        
+
         // Record payment time for sales calculation
         if (newStatus === 'paid') {
             updateData.paidAt = serverTimestamp();

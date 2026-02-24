@@ -1,10 +1,10 @@
 // firebase-config.js
-// 井木様の環境に合わせて、CDN経由で読み込む設定にしています
+// CDN経由で読み込むFirebase設定
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-// スクリーンショットから転記した井木様の正確なキー情報
+// Firebase プロジェクト設定
 const firebaseConfig = {
   apiKey: "AIzaSyCllVVFZhd7wozV-HrqS0JL0Gk-VJjcB7U",
   authDomain: "aibuzz-retro-cafe.firebaseapp.com",
