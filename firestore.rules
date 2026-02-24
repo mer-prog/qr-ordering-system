@@ -3,22 +3,53 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // 【メニュー】
-    // お客さんは「見るだけ」。管理画面から編集可能。
-    // ※認証未実装のため、write は一旦 true にする
+    // 読み取りは全員OK、書き込みはデータ検証付き
     match /menu/{item} {
       allow read: if true;
-      allow write: if true;
+
+      // 書き込み時のデータ検証（不正なデータ投入を防止）
+      allow write: if
+        request.resource.data.keys().hasAll(['name', 'price', 'type']) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 100 &&
+        request.resource.data.price is number &&
+        request.resource.data.price >= 0 &&
+        request.resource.data.price <= 100000 &&
+        request.resource.data.type is string &&
+        request.resource.data.type.size() > 0 &&
+        request.resource.data.type.size() <= 50;
     }
 
     // 【注文】
-    // お客さんは「注文作成」ができる。
-    // 店員用アプリがまだ認証未実装のため、確認と更新は「誰でもOK」。
-    // ただし「削除」は禁止して履歴を守る。
+    // 作成時はデータ検証付き
+    // 更新はステータス変更のみ許可
+    // 削除は禁止（履歴保護）
     match /orders/{order} {
-      allow create: if true;
-      allow read, update: if true;
+      allow read: if true;
+
+      // 注文作成時: 必須フィールドとデータ型を検証
+      allow create: if
+        request.resource.data.keys().hasAll(['tableId', 'items', 'status', 'timestamp']) &&
+        request.resource.data.tableId is number &&
+        request.resource.data.tableId >= 1 &&
+        request.resource.data.tableId <= 100 &&
+        request.resource.data.items is list &&
+        request.resource.data.items.size() > 0 &&
+        request.resource.data.items.size() <= 50 &&
+        request.resource.data.status == 'pending';
+
+      // 更新時: ステータス遷移のみ許可
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'paidAt']) &&
+        request.resource.data.status in ['pending', 'served', 'paid'];
+
       allow delete: if false;
     }
 
+    // その他のコレクションはすべてアクセス拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

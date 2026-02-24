@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta name="referrer" content="no-referrer">
     <title>厨房・オーダー管理（黒板）</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Kaisei+Decol:wght@400;700&display=swap" rel="stylesheet">
@@ -344,6 +346,24 @@
         } from './db-service.js';
 
         // ============================================================
+        //  XSS SANITIZATION
+        // ============================================================
+        function escapeHTML(str) {
+            if (typeof str !== 'string') return '';
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function sanitizeId(id) {
+            if (typeof id !== 'string') return '';
+            return id.replace(/[^a-zA-Z0-9_\-]/g, '');
+        }
+
+        // ============================================================
         //  SHARED STATE
         // ============================================================
         let menuItems = []; // current menu from Firestore
@@ -406,6 +426,14 @@
             const file = event.target.files[0];
             if (!file) return;
 
+            // Validate file type (server-side validation equivalent)
+            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+            if (!allowedTypes.includes(file.type)) {
+                showToast('許可されていないファイル形式です (JPEG/PNG/GIF/WebPのみ)', 'error');
+                event.target.value = '';
+                return;
+            }
+
             // Limit file size to 1MB
             if (file.size > 1024 * 1024) {
                 showToast('画像サイズは1MB以下にしてください', 'error');
@@ -443,7 +471,7 @@
 
         function updateImagePreview(src) {
             const preview = document.getElementById('image-preview');
-            if (src && src.length > 10) {
+            if (src && src.length > 10 && (src.startsWith('data:image/') || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('./'))) {
                 preview.innerHTML = `<img src="${src}" class="w-full h-full object-cover">`;
             } else {
                 preview.innerHTML = `<span class="text-gray-500 text-xs">No Image</span>`;
@@ -479,30 +507,32 @@
         function renderPendingCard(order) {
             const itemsHtml = order.items.map(item => `
                 <div class="flex justify-between items-baseline border-b border-gray-400 border-dotted pb-1 mb-1 last:border-0 text-gray-800">
-                    <span class="text-md font-serif">${item.name}</span>
-                    <span class="font-mono text-red-600 font-bold">x${item.quantity}</span>
+                    <span class="text-md font-serif">${escapeHTML(item.name)}</span>
+                    <span class="font-mono text-red-600 font-bold">x${parseInt(item.quantity) || 0}</span>
                 </div>
             `).join('');
 
             const timeStr = order.timestamp ? order.timestamp.toDate().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
-            const orderIdShort = order.id.slice(-4).toUpperCase();
+            const safeOrderId = sanitizeId(order.id);
+            const orderIdShort = safeOrderId.slice(-4).toUpperCase();
+            const safeTableId = parseInt(order.tableId) || 0;
 
             const el = document.createElement('div');
             el.className = 'paper-slip p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
             el.innerHTML = `
                 <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-gray-400 pb-1">
-                    <span class="font-bold text-gray-900 text-lg">卓番: <span class="font-mono text-2xl">${order.tableId}</span></span>
-                    <span class="text-xs text-gray-500 font-mono">#${orderIdShort}</span>
+                    <span class="font-bold text-gray-900 text-lg">卓番: <span class="font-mono text-2xl">${safeTableId}</span></span>
+                    <span class="text-xs text-gray-500 font-mono">#${escapeHTML(orderIdShort)}</span>
                 </div>
-                <div class="text-xs text-right text-gray-500 mb-2">${timeStr}</div>
+                <div class="text-xs text-right text-gray-500 mb-2">${escapeHTML(timeStr)}</div>
                 <div class="space-y-1 mb-3 text-sm">
                     ${itemsHtml}
                 </div>
-                <button class="w-full bg-red-800 text-white border-b-4 border-red-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="updateOrderStatus('${order.id}', 'served')">
+                <button class="w-full bg-red-800 text-white border-b-4 border-red-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="updateOrderStatus('${safeOrderId}', 'served')">
                     提供完了
                 </button>
                  <div class="text-right mt-1">
-                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-red-700 hover:underline" onclick="deleteOrderPermanently('${order.id}')">削除</span>
+                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-red-700 hover:underline" onclick="deleteOrderPermanently('${safeOrderId}')">削除</span>
                 </div>
             `;
             return el;
@@ -530,21 +560,22 @@
 
             const itemsHtml = Object.values(mergedItems).map(item => `
                 <div class="flex justify-between items-baseline border-b border-cyan-700/20 border-dotted pb-1 mb-1 last:border-0 text-cyan-900">
-                    <span class="text-md font-serif">${item.name}</span>
-                    <span class="font-mono font-bold">x${item.quantity}</span>
+                    <span class="text-md font-serif">${escapeHTML(item.name)}</span>
+                    <span class="font-mono font-bold">x${parseInt(item.quantity) || 0}</span>
                 </div>
             `).join('');
 
             const timeStr = earliestTime ? earliestTime.toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
+            const safeTableId = parseInt(tableId) || 0;
 
             const el = document.createElement('div');
             el.className = 'paper-slip-served p-3 rounded-sm relative transform transition-all hover:scale-[1.01]';
             el.innerHTML = `
                 <div class="flex justify-between items-center mb-2 border-b-2 border-dashed border-cyan-700/30 pb-1">
-                    <span class="font-bold text-cyan-900 text-lg">卓番: <span class="font-mono text-2xl">${tableId}</span></span>
+                    <span class="font-bold text-cyan-900 text-lg">卓番: <span class="font-mono text-2xl">${safeTableId}</span></span>
                     <span class="text-xs bg-cyan-100 text-cyan-800 px-1 rounded border border-cyan-300">伝票</span>
                 </div>
-                <div class="text-xs text-right text-cyan-700 mb-2">First: ${timeStr}</div>
+                <div class="text-xs text-right text-cyan-700 mb-2">First: ${escapeHTML(timeStr)}</div>
                 <div class="space-y-1 mb-3 text-sm">
                     ${itemsHtml}
                 </div>
@@ -552,7 +583,7 @@
                     <span class="text-xs text-cyan-700">合計</span>
                     <span class="text-xl font-mono font-bold text-cyan-900">¥${total.toLocaleString()}</span>
                 </div>
-                <button class="w-full bg-cyan-700 text-white border-b-4 border-cyan-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="completeTableOrders([${orders.map(o => `'${o.id}'`).join(',')}])">
+                <button class="w-full bg-cyan-700 text-white border-b-4 border-cyan-900 py-2 rounded font-bold shadow active:translate-y-1 active:border-b-0" onclick="completeTableOrders([${orders.map(o => `'${sanitizeId(o.id)}'`).join(',')}])">
                     会計完了
                 </button>
             `;
@@ -562,14 +593,15 @@
         function renderHistoryItem(order) {
             const total = order.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const timeStr = order.paidAt ? order.paidAt.toDate().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}) : '--:--';
-            
+            const safeTableId = parseInt(order.tableId) || 0;
+
             const el = document.createElement('div');
             el.className = 'bg-white/5 p-2 rounded border border-white/10 flex justify-between items-center text-sm hover:bg-white/10 transition-colors';
             el.innerHTML = `
                 <div class="flex items-center gap-3 text-gray-300 min-w-0">
-                    <span class="font-mono text-xs opacity-50">${timeStr}</span>
-                    <span class="font-bold shrink-0">卓番:${order.tableId}</span>
-                    <span class="truncate opacity-70 text-xs">${order.items.map(i => i.name).join(', ')}</span>
+                    <span class="font-mono text-xs opacity-50">${escapeHTML(timeStr)}</span>
+                    <span class="font-bold shrink-0">卓番:${safeTableId}</span>
+                    <span class="truncate opacity-70 text-xs">${escapeHTML(order.items.map(i => i.name).join(', '))}</span>
                 </div>
                 <span class="font-mono text-gray-400 ml-2">¥${total.toLocaleString()}</span>
             `;
@@ -722,7 +754,7 @@
                 headerRow.innerHTML = `
                     <td colspan="6" class="category-header">
                         <div class="flex items-center gap-2">
-                            <span>${cat.name} (${items.length}品)</span>
+                            <span>${escapeHTML(cat.name)} (${items.length}品)</span>
                             <div class="flex gap-1 ml-auto">
                                 <button class="text-gray-400 ${catUpDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', -1)" title="カテゴリを上へ">▲</button>
                                 <button class="text-gray-400 ${catDownDisabled} text-sm px-1" onclick="moveCategory('${cat.id}', 1)" title="カテゴリを下へ">▼</button>
@@ -745,26 +777,27 @@
                     const upDisabled = idx === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
                     const downDisabled = idx === items.length - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:text-white cursor-pointer';
 
+                    const safeItemId = sanitizeId(item.id);
                     tr.innerHTML = `
                         <td>
                             <div class="flex flex-col items-center gap-0.5">
-                                <button class="text-gray-500 ${upDisabled} text-xs leading-none" onclick="moveItem('${item.id}', -1)">▲</button>
-                                <button class="text-gray-500 ${downDisabled} text-xs leading-none" onclick="moveItem('${item.id}', 1)">▼</button>
+                                <button class="text-gray-500 ${upDisabled} text-xs leading-none" onclick="moveItem('${safeItemId}', -1)">▲</button>
+                                <button class="text-gray-500 ${downDisabled} text-xs leading-none" onclick="moveItem('${safeItemId}', 1)">▼</button>
                             </div>
                         </td>
                         <td>
                             <div class="flex items-center gap-2">
-                                <div class="font-bold text-sm">${item.name}</div>
+                                <div class="font-bold text-sm">${escapeHTML(item.name)}</div>
                                 ${optionsBadge}
                             </div>
                         </td>
-                        <td><span class="text-xs px-2 py-0.5 rounded bg-white/10">${item.typeName || item.type}</span></td>
+                        <td><span class="text-xs px-2 py-0.5 rounded bg-white/10">${escapeHTML(item.typeName || item.type)}</span></td>
                         <td class="font-mono font-bold">¥${item.price?.toLocaleString()}</td>
                         <td class="font-mono text-sm ${item.priceMorning ? 'text-yellow-400' : 'text-gray-600'}">${item.priceMorning ? '¥' + item.priceMorning.toLocaleString() : '—'}</td>
                         <td>
                             <div class="flex gap-2">
-                                <button class="btn-action btn-save" onclick="openEditModal('${item.id}')">編集</button>
-                                <button class="btn-action btn-delete" onclick="confirmDeleteItem('${item.id}', '${item.name}')">削除</button>
+                                <button class="btn-action btn-save" onclick="openEditModal('${safeItemId}')">編集</button>
+                                <button class="btn-action btn-delete" onclick="confirmDeleteItem('${safeItemId}', '${escapeHTML(item.name)}')">削除</button>
                             </div>
                         </td>
                     `;
@@ -982,7 +1015,7 @@
             const item = menuItems.find(i => i.id === itemId);
             if (!item) return;
 
-            document.getElementById('modal-title').textContent = `${item.name} を編集`;
+            document.getElementById('modal-title').textContent = `${item.name || ''} を編集`;
             document.getElementById('edit-id').value = item.id;
             document.getElementById('edit-name').value = item.name || '';
             document.getElementById('edit-nameEn').value = item.nameEn || '';
