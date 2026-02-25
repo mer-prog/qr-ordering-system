@@ -1,5 +1,31 @@
 import { addOrder, subscribeToMenu } from './db-service.js';
 
+// ============================================================
+//  XSS SANITIZATION
+// ============================================================
+function escapeHTML(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function sanitizeImageSrc(src) {
+    if (!src || typeof src !== 'string') return '';
+    if (src.startsWith('data:image/')) return src;
+    if (src.startsWith('http://') || src.startsWith('https://')) return src;
+    if (src.startsWith('./') || src.startsWith('/') || src.startsWith('../')) return src;
+    return '';
+}
+
+function sanitizeId(id) {
+    if (typeof id !== 'string') return '';
+    return id.replace(/[^a-zA-Z0-9_\-]/g, '');
+}
+
 // Configuration
 const TABLE_ID = new URLSearchParams(window.location.search).get('table') || 1;
 let currentLang = 'ja'; // 'ja' or 'en'
@@ -221,7 +247,7 @@ function renderMenu() {
         if (items.length === 0) return;
 
         // Section Header
-        const sectionTitle = getLocalizedCategoryName(cat);
+        const sectionTitle = escapeHTML(getLocalizedCategoryName(cat));
         const sectionEl = document.createElement('div');
         sectionEl.className = 'col-span-full mt-6 mb-4 select-none';
         sectionEl.innerHTML = `
@@ -237,19 +263,21 @@ function renderMenu() {
         
         gridEl.innerHTML = items.map(item => {
             const price = getPrice(item);
-            const name = getLocalizedText(item, 'name');
-            const desc = getLocalizedText(item, 'desc');
-            
+            const name = escapeHTML(getLocalizedText(item, 'name'));
+            const desc = escapeHTML(getLocalizedText(item, 'desc'));
+            const safeId = sanitizeId(item.id);
+
             const hasOptions = item.hasOptions;
-            const clickAction = hasOptions ? `openSandwichModal('${item.id}')` : `updateQuantity('${item.id}', 1)`;
-            const minusAction = hasOptions ? `openSandwichModal('${item.id}')` : `updateQuantity('${item.id}', -1)`; 
-            
-            const imageHtml = item.image
-                ? `<img src="${item.image}" alt="${name}" class="w-full h-full object-cover sepia-[.3] group-hover:sepia-0 transition-all duration-300">`
+            const clickAction = hasOptions ? `openSandwichModal('${safeId}')` : `updateQuantity('${safeId}', 1)`;
+            const minusAction = hasOptions ? `openSandwichModal('${safeId}')` : `updateQuantity('${safeId}', -1)`;
+
+            const safeSrc = sanitizeImageSrc(item.image);
+            const imageHtml = safeSrc
+                ? `<img src="${safeSrc}" alt="${name}" class="w-full h-full object-cover sepia-[.3] group-hover:sepia-0 transition-all duration-300">`
                 : `<div class="w-full h-full flex items-center justify-center bg-retro-brown/5 text-3xl opacity-40">☕</div>`;
 
             return `
-            <div class="menu-item group" data-id="${item.id}">
+            <div class="menu-item group" data-id="${safeId}">
                 <div class="flex items-start select-none">
                     <div class="w-24 h-24 mr-4 flex-shrink-0 rounded overflow-hidden border border-retro-brown/20 relative" onclick="${clickAction}">
                         ${imageHtml}
@@ -263,7 +291,7 @@ function renderMenu() {
                         <div class="flex justify-between items-end">
                             <p class="font-mono text-lg text-retro-red tracking-wider">¥${price}</p>
                             <div class="flex items-center gap-3 z-10">
-                                <button class="qty-btn opacity-0 pointer-events-none transition-opacity duration-200" onclick="${minusAction}" data-btn-minus="${item.id}">－</button>
+                                <button class="qty-btn opacity-0 pointer-events-none transition-opacity duration-200" onclick="${minusAction}" data-btn-minus="${safeId}">－</button>
                                 <div class="qty-display-wrapper">
                                     <span class="quantity-display text-2xl font-mono font-bold opacity-30">0</span>
                                 </div>
@@ -296,14 +324,15 @@ window.openSandwichModal = (parentId) => {
     
     optionsContainer.innerHTML = options.map(opt => {
         const qty = cart[opt.id] || 0;
-        const name = getLocalizedText(opt, 'name');
+        const name = escapeHTML(getLocalizedText(opt, 'name'));
+        const safeOptId = sanitizeId(opt.id);
         return `
         <div class="flex justify-between items-center bg-[#e8e4da] p-3 rounded border border-retro-brown/20">
             <span class="font-serif font-bold text-retro-brown">${name}</span>
             <div class="flex items-center gap-3">
-                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-white border border-retro-brown/30 rounded-full text-retro-brown shadow-sm active:translate-y-px" onclick="updateQuantity('${opt.id}', -1, true)">－</button>
-                <span class="font-mono text-xl w-6 text-center font-bold" id="qty-${opt.id}">${qty}</span>
-                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-retro-red text-white border border-retro-red rounded-full shadow-sm active:translate-y-px" onclick="updateQuantity('${opt.id}', 1, true)">＋</button>
+                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-white border border-retro-brown/30 rounded-full text-retro-brown shadow-sm active:translate-y-px" onclick="updateQuantity('${safeOptId}', -1, true)">－</button>
+                <span class="font-mono text-xl w-6 text-center font-bold" id="qty-${safeOptId}">${qty}</span>
+                <button class="qty-btn w-8 h-8 flex items-center justify-center bg-retro-red text-white border border-retro-red rounded-full shadow-sm active:translate-y-px" onclick="updateQuantity('${safeOptId}', 1, true)">＋</button>
             </div>
         </div>
         `;
